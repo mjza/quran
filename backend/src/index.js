@@ -3,10 +3,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Database from 'better-sqlite3';
 import express from 'express';
-import { PAGE_STARTS, SURAH_NAMES } from './data.js';
+import { getJuzNumber, PAGE_STARTS, SURAH_METADATA } from './data.js';
 
-const serverDirectory = path.dirname(fileURLToPath(import.meta.url));
-const projectDirectory = path.resolve(serverDirectory, '..');
+const backendDirectory = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const projectDirectory = path.resolve(backendDirectory, '..');
 const databasePath = path.join(projectDirectory, 'data', 'quran.sqlite');
 const audioDirectory = path.join(projectDirectory, 'data', 'audio', 'recitations');
 const translationAudioDirectory = path.join(
@@ -153,16 +153,24 @@ app.get('/api/health', (_request, response) => {
 
 app.get('/api/surahs', (_request, response) => {
   const chapters = db.prepare(`
-    SELECT sura AS number, COUNT(*) AS ayahCount
+    SELECT sura AS number, MIN("index") AS startVerseIndex, COUNT(*) AS ayahCount
     FROM quran_text_uthmani
     GROUP BY sura
     ORDER BY sura
   `).all();
 
-  response.json(chapters.map((chapter) => ({
-    ...chapter,
-    name: SURAH_NAMES[chapter.number - 1],
-  })));
+  response.json(chapters.map((chapter) => {
+    const metadata = SURAH_METADATA[chapter.number - 1];
+    if (
+      !metadata
+      || metadata.number !== chapter.number
+      || metadata.startVerseIndex !== chapter.startVerseIndex
+      || metadata.ayahCount !== chapter.ayahCount
+    ) {
+      throw new Error(`Surah metadata mismatch for surah ${chapter.number}.`);
+    }
+    return metadata;
+  }));
 });
 
 app.get('/api/pages/:page', (request, response) => {
@@ -174,10 +182,7 @@ app.get('/api/pages/:page', (request, response) => {
 
   const bounds = db.prepare(`
     SELECT page, start_sura AS startSura,
-      CASE
-        WHEN start_aya = 1 AND start_sura NOT IN (1, 9) THEN 0
-        ELSE start_aya
-      END AS startAya,
+      start_aya AS startAya,
       end_sura AS endSura, end_aya AS endAya
     FROM quran_pages
     WHERE page = ?
@@ -255,13 +260,10 @@ app.get('/api/reader', (request, response) => {
   response.json({
     page: {
       number: page.page,
-      start: {
-        sura: page.startSura,
-        aya: page.startAya === 1 && hasBasmalaAya(page.startSura) ? 0 : page.startAya,
-      },
+      start: { sura: page.startSura, aya: page.startAya },
       end: { sura: page.endSura, aya: page.endAya },
     },
-    current: { sura, aya },
+    current: { sura, aya: verseAya, juz: getJuzNumber(sura, verseAya) },
     verses: displayVerses,
   });
 });

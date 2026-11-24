@@ -11,8 +11,9 @@ translation, and local per-ayah recitation.
 - `data/quran.sqlite`
 - Recitation files under `data/audio/recitations/`
 
-The existing `.gitignore` excludes `data/`; keep the database and audio files in
-those local paths.
+The app code is organized under `backend/src/` and `frontend/src/`. Put static
+frontend images in `frontend/public/images/`. The existing `.gitignore`
+excludes `data/`; keep the database and audio files in those local paths.
 
 ## Run locally
 

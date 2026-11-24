@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { formatQuranText } from './quranText.js';
 
 const EDITIONS = [
   ['quran_text_uthmani', 'Uthmani'],
@@ -13,12 +14,29 @@ function hasBasmalaAya(sura) {
   return sura !== 1 && sura !== 9;
 }
 
+function arabicNumber(value) {
+  return String(value).replace(/\d/g, (digit) => '٠١٢٣٤٥٦٧٨٩'[digit]);
+}
+
+function formatAyahNumber(value) {
+  return `\u200e﴿${arabicNumber(value)}﴾\u200f`;
+}
+
 function readHash() {
   const match = window.location.hash.match(/^#?(\d+):(\d+)$/);
   if (!match) {
     return { sura: 1, aya: 1 };
   }
-  return { sura: Number(match[1]), aya: Number(match[2]) };
+  const aya = Number(match[2]);
+  return { sura: Number(match[1]), aya: aya === 0 ? 1 : aya };
+}
+
+function QuranText({ text, showSigns }) {
+  return formatQuranText(text, { showSigns }).map((part, index) => (
+    typeof part === 'string'
+      ? part
+      : <span key={index} className={part.className}>{part.text}</span>
+  ));
 }
 
 async function requestJson(url, signal) {
@@ -38,6 +56,7 @@ function App() {
   const [edition, setEdition] = useState(EDITIONS[0][0]);
   const [reciter, setReciter] = useState('');
   const [showTranslation, setShowTranslation] = useState(true);
+  const [showSigns, setShowSigns] = useState(true);
   const [playTranslation, setPlayTranslation] = useState(false);
   const [fontScale, setFontScale] = useState(1);
   const [pageInput, setPageInput] = useState('1');
@@ -45,13 +64,20 @@ function App() {
   const [error, setError] = useState('');
   const [isPlaying, setIsPlaying] = useState(false);
   const [audioTrack, setAudioTrack] = useState('recitation');
+  const [basmalaPlayed, setBasmalaPlayed] = useState(false);
   const audioRef = useRef(null);
 
   const currentSurah = useMemo(
     () => surahs.find((item) => item.number === location.sura),
     [surahs, location.sura],
   );
-  const audioUrl = `/api/audio/${location.sura}/${location.aya}${reciter ? `?reciter=${encodeURIComponent(reciter)}` : ''}`;
+  const isBasmalaPrelude = audioTrack === 'recitation'
+    && location.aya === 1
+    && hasBasmalaAya(location.sura)
+    && !basmalaPlayed;
+  const audioUrl = isBasmalaPrelude
+    ? `/api/audio/1/1${reciter ? `?reciter=${encodeURIComponent(reciter)}` : ''}`
+    : `/api/audio/${location.sura}/${location.aya}${reciter ? `?reciter=${encodeURIComponent(reciter)}` : ''}`;
   const translationAudioUrl = `/api/translation-audio/${location.sura}/${location.aya}`;
   const currentAudioUrl = audioTrack === 'translation' ? translationAudioUrl : audioUrl;
 
@@ -70,20 +96,32 @@ function App() {
   }, [currentAudioUrl, isPlaying]);
 
   const navigate = useCallback((sura, aya, { replace = false } = {}) => {
-    const hash = `#${sura}:${aya}`;
+    const targetAya = aya === 0 ? 1 : aya;
+    const hash = `#${sura}:${targetAya}`;
     if (window.location.hash !== hash) {
       window.history[replace ? 'replaceState' : 'pushState'](null, '', hash);
     }
+    setBasmalaPlayed(false);
     if (!replace) {
       setIsPlaying(false);
       setAudioTrack('recitation');
     }
-    setLocation({ sura, aya });
+    setLocation({ sura, aya: targetAya });
   }, []);
 
   useEffect(() => {
-    const onHashChange = () => setLocation(readHash());
-    const onPopState = () => setLocation(readHash());
+    const syncLocation = () => {
+      const nextLocation = readHash();
+      const hash = `#${nextLocation.sura}:${nextLocation.aya}`;
+      if (window.location.hash !== hash) {
+        window.history.replaceState(null, '', hash);
+      }
+      setBasmalaPlayed(false);
+      setLocation(nextLocation);
+    };
+    syncLocation();
+    const onHashChange = () => syncLocation();
+    const onPopState = () => syncLocation();
     window.addEventListener('hashchange', onHashChange);
     window.addEventListener('popstate', onPopState);
     return () => {
@@ -115,8 +153,7 @@ function App() {
     if (
       location.sura < 1
       || location.sura > 114
-      || location.aya < 0
-      || (location.aya === 0 && !hasBasmalaAya(location.sura))
+      || location.aya < 1
     ) {
       setError('The address must use a valid surah and ayah, for example #112:1.');
       setLoading(false);
@@ -188,13 +225,18 @@ function App() {
       navigate(location.sura, location.aya + 1, { replace: true });
     } else if (location.sura < 114) {
       const nextSura = location.sura + 1;
-      navigate(nextSura, hasBasmalaAya(nextSura) ? 0 : 1, { replace: true });
+      navigate(nextSura, 1, { replace: true });
     } else {
       setIsPlaying(false);
     }
   };
 
   const handleAudioEnded = () => {
+    if (isBasmalaPrelude) {
+      setBasmalaPlayed(true);
+      return;
+    }
+
     if (audioTrack === 'translation') {
       advancePlayback();
       return;
@@ -218,13 +260,20 @@ function App() {
 
   const changeSurah = (event) => {
     const sura = Number(event.target.value);
-    navigate(sura, hasBasmalaAya(sura) ? 0 : 1);
+    navigate(sura, 1);
   };
 
   const submitLocation = (event) => {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
     navigate(Number(data.get('sura')), Number(data.get('aya')));
+  };
+
+  const navigateOnKeyDown = (event, sura, aya) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      navigate(sura, aya);
+    }
   };
 
   return (
@@ -272,7 +321,7 @@ function App() {
             <div className="location-fields">
               <input id="sura-input" name="sura" type="number" min="1" max="114" defaultValue={location.sura} aria-label="Surah number" />
               <span>:</span>
-              <input name="aya" type="number" min="0" defaultValue={location.aya} aria-label="Ayah number" />
+              <input name="aya" type="number" min="1" defaultValue={location.aya} aria-label="Ayah number" />
               <button className="go-button" type="submit">Go</button>
             </div>
           </form>
@@ -283,6 +332,10 @@ function App() {
           <select id="edition-select" value={edition} onChange={(event) => setEdition(event.target.value)}>
             {EDITIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
           </select>
+          <label className="check-row">
+            <input type="checkbox" checked={showSigns} onChange={(event) => setShowSigns(event.target.checked)} />
+            <span>Show recitation signs</span>
+          </label>
           <label className="check-row">
             <input type="checkbox" checked={showTranslation} onChange={(event) => setShowTranslation(event.target.checked)} />
             <span>Fooladvand Persian translation</span>
@@ -321,79 +374,105 @@ function App() {
         </aside>
 
         <section className="reader-column" aria-label="Quran text">
-          <div className="reader-toolbar">
-            <div>
-              <span className="eyebrow">THE QURAN</span>
-              <h1>{currentSurah?.name || `Surah ${location.sura}`}</h1>
-              <p>{currentSurah?.ayahCount || '—'} ayahs <span>·</span> Page {reader?.page.number || '—'} of 604</p>
-            </div>
-            <div className="page-controls">
-              <button type="button" onClick={() => changePage(-1)} disabled={!reader || reader.page.number === 1} aria-label="Previous page">←</button>
-              <label>
-                <span>Page</span>
-                <input
-                  type="number"
-                  min="1"
-                  max="604"
-                  value={pageInput}
-                  onChange={(event) => {
-                    setPageInput(event.target.value);
-                  }}
-                  onBlur={() => {
-                    const pageNumber = Number(pageInput);
-                    if (pageInput && pageNumber >= 1 && pageNumber <= 604 && pageNumber !== reader?.page.number) {
-                      goToPage(pageNumber);
-                    }
-                  }}
-                  aria-label="Page number"
-                />
-              </label>
-              <button type="button" onClick={() => changePage(1)} disabled={!reader || reader.page.number === 604} aria-label="Next page">→</button>
-            </div>
-          </div>
-
           {error && <div className="error-banner" role="alert">{error}</div>}
           {loading && <div className="loading-state">Loading local Quran text…</div>}
           {!loading && reader && (
-            <div className="page-card">
-              <div className="page-card-heading">
-                <span>{reader.page.start.sura}:{reader.page.start.aya} — {reader.page.end.sura}:{reader.page.end.aya}</span>
-                <span>PAGE {reader.page.number}</span>
+            <div className="quran-page">
+              <div className="quran-page-header">
+                <div className="quran-surah-name" dir="rtl">
+                  <strong>{currentSurah ? `سورة ${currentSurah.arabicName}` : `سورة ${arabicNumber(location.sura)}`}</strong>
+                  <small
+                    title={currentSurah
+                      ? `${currentSurah.name}; ${currentSurah.revelationType}; revelation order ${currentSurah.revelationOrder}; ${currentSurah.rukuCount} rukus`
+                      : undefined}
+                  >
+                    {currentSurah?.meaning || currentSurah?.name}
+                    {currentSurah?.revelationType && ` · ${currentSurah.revelationType}`}
+                  </small>
+                </div>
+                <div className="quran-page-navigation" dir="ltr">
+                  <button type="button" onClick={() => changePage(-1)} disabled={reader.page.number === 1} aria-label="Previous page">◄</button>
+                  <label>
+                    <span className="visually-hidden">Page number</span>
+                    <input
+                      type="text"
+                      min="1"
+                      max="604"
+                      value={pageInput}
+                      onChange={(event) => setPageInput(event.target.value)}
+                      onBlur={() => {
+                        const pageNumber = Number(pageInput);
+                        if (pageInput && pageNumber >= 1 && pageNumber <= 604 && pageNumber !== reader.page.number) {
+                          goToPage(pageNumber);
+                        }
+                      }}
+                      aria-label="Page number"
+                    />
+                  </label>
+                  <button type="button" onClick={() => changePage(1)} disabled={reader.page.number === 604} aria-label="Next page">►</button>
+                </div>
+                <div className="quran-edition-name" dir="rtl">
+                  <strong>مصحف المدينة</strong>
+                  <small>{currentSurah?.ayahCount || '—'} ayahs · Juz {reader.current.juz}</small>
+                </div>
               </div>
-              <div className="verses" style={{ '--arabic-scale': fontScale }}>
-                {reader.verses.map((verse) => {
-                  const active = verse.sura === location.sura && verse.aya === location.aya;
-                  return (
-                    <article
-                      className={`verse ${active ? 'verse-active' : ''}`}
-                      id={`verse-${verse.sura}-${verse.aya}`}
-                      key={`${verse.sura}:${verse.aya}`}
-                      onClick={() => navigate(verse.sura, verse.aya)}
-                    >
-                      <div className="arabic-line" lang="ar" dir="rtl">
-                        <span>{verse.text}</span>
-                        <button
-                          type="button"
-                          className="verse-number"
-                          aria-label={`Go to ${verse.sura}:${verse.aya}`}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            navigate(verse.sura, verse.aya);
-                          }}
-                        >
-                          {verse.aya}
-                        </button>
-                      </div>
-                      {showTranslation && verse.translation && (
-                        <p className="translation" lang="fa" dir="rtl">{verse.translation}</p>
-                      )}
-                    </article>
-                  );
-                })}
+
+              <div className="quran-frame quran-frame-top" aria-hidden="true" />
+              <div className="quran-frame quran-frame-middle">
+                <div className="quran-text" style={{ '--arabic-scale': fontScale }}>
+                  {reader.verses.map((verse) => {
+                    const active = verse.sura === location.sura && verse.aya === location.aya;
+                    const verseSurah = surahs.find((surah) => surah.number === verse.sura);
+                    return (
+                      <Fragment key={`${verse.sura}:${verse.aya}`}>
+                        {(verse.aya === 0 || (verse.aya === 1 && (verse.sura === 1 || verse.sura === 9))) && (
+                          <div className="sura-heading-frame" lang="ar" dir="rtl">
+                            <span>سورة {verseSurah?.arabicName || arabicNumber(verse.sura)}</span>
+                          </div>
+                        )}
+                        {verse.aya === 0 ? (
+                          <span
+                            className="basmala"
+                            lang="ar"
+                            dir="rtl"
+                          >
+                            <QuranText text={verse.text} showSigns={showSigns} />
+                          </span>
+                        ) : (
+                          <span
+                            className={`ayah ${active ? 'ayah-selected' : ''}`}
+                            id={`verse-${verse.sura}-${verse.aya}`}
+                            lang="ar"
+                            dir="rtl"
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => navigate(verse.sura, verse.aya)}
+                            onKeyDown={(event) => navigateOnKeyDown(event, verse.sura, verse.aya)}
+                          >
+                            {' '}<QuranText text={verse.text} showSigns={showSigns} />{' '}
+                            <span className="ayaNumber" aria-hidden="true">{formatAyahNumber(verse.aya)}</span>
+                          </span>
+                        )}
+                      </Fragment>
+                    );
+                  })}
+                </div>
+                {showTranslation && (
+                  <div className="translation-list" lang="fa" dir="rtl">
+                    {reader.verses.filter((verse) => verse.translation).map((verse) => (
+                      <p className="translation" key={`translation-${verse.sura}:${verse.aya}`}>
+                        <span className="translation-reference" dir="ltr">{verse.sura}:{verse.aya}</span>
+                        {verse.translation}
+                      </p>
+                    ))}
+                  </div>
+                )}
               </div>
-              <div className="page-card-footer">
-                <button type="button" onClick={() => changePage(-1)} disabled={reader.page.number === 1}>← Previous page</button>
-                <button type="button" onClick={() => changePage(1)} disabled={reader.page.number === 604}>Next page →</button>
+              <div className="quran-frame quran-frame-bottom" aria-hidden="true" />
+              <div className="quran-page-footer" dir="ltr">
+                <button type="button" onClick={() => changePage(-1)} disabled={reader.page.number === 1} aria-label="Previous page">◄</button>
+                <span>{arabicNumber(reader.page.number)}</span>
+                <button type="button" onClick={() => changePage(1)} disabled={reader.page.number === 604} aria-label="Next page">►</button>
               </div>
             </div>
           )}
