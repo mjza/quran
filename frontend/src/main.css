@@ -459,7 +459,7 @@ button {
   white-space: nowrap;
 }
 .arabic-line.last-in-stream:not(.fixed-justified),
-.translation-line.last-in-stream {
+.translation-line.last-in-stream:not(.translation-extended) {
   text-align-last: auto;
 }
 .basmala-line {
