@@ -18,7 +18,7 @@ function arabicNumber(value) {
   return String(value).replace(/\d/g, (digit) => '٠١٢٣٤٥٦٧٨٩'[digit]);
 }
 
-function formatAyahNumber(value) {
+function formatAyaNumber(value) {
   return `\u200e﴿${arabicNumber(value)}﴾\u200f`;
 }
 
@@ -51,7 +51,7 @@ async function requestJson(url, signal) {
 function App() {
   const [location, setLocation] = useState(readHash);
   const [reader, setReader] = useState(null);
-  const [surahs, setSurahs] = useState([]);
+  const [suras, setSuras] = useState([]);
   const [reciters, setReciters] = useState([]);
   const [edition, setEdition] = useState(EDITIONS[0][0]);
   const [reciter, setReciter] = useState('');
@@ -67,9 +67,9 @@ function App() {
   const [basmalaPlayed, setBasmalaPlayed] = useState(false);
   const audioRef = useRef(null);
 
-  const currentSurah = useMemo(
-    () => surahs.find((item) => item.number === location.sura),
-    [surahs, location.sura],
+  const currentSura = useMemo(
+    () => suras.find((item) => item.number === location.sura),
+    [suras, location.sura],
   );
   const isBasmalaPrelude = audioTrack === 'recitation'
     && location.aya === 1
@@ -133,11 +133,11 @@ function App() {
   useEffect(() => {
     const controller = new AbortController();
     Promise.all([
-      requestJson('/api/surahs', controller.signal),
+      requestJson('/api/suras', controller.signal),
       requestJson('/api/reciters', controller.signal),
     ])
       .then(([chapterList, reciterList]) => {
-        setSurahs(chapterList);
+        setSuras(chapterList);
         setReciters(reciterList);
         setReciter(reciterList[0]?.id || '');
       })
@@ -155,7 +155,7 @@ function App() {
       || location.sura > 114
       || location.aya < 1
     ) {
-      setError('The address must use a valid surah and ayah, for example #112:1.');
+      setError('The address must use a valid sura and aya, for example #112:1.');
       setLoading(false);
       return undefined;
     }
@@ -215,7 +215,7 @@ function App() {
   };
 
   const advancePlayback = () => {
-    const lastAya = currentSurah?.ayahCount;
+    const lastAya = currentSura?.ayaCount;
     setAudioTrack('recitation');
     if (!lastAya) {
       setIsPlaying(false);
@@ -258,7 +258,7 @@ function App() {
     }
   };
 
-  const changeSurah = (event) => {
+  const changeSura = (event) => {
     const sura = Number(event.target.value);
     navigate(sura, 1);
   };
@@ -307,21 +307,21 @@ function App() {
             <span className="position-badge">{location.sura}:{location.aya}</span>
           </div>
 
-          <label className="field-label" htmlFor="surah-select">Surah</label>
-          <select id="surah-select" value={location.sura} onChange={changeSurah}>
-            {surahs.map((surah) => (
-              <option key={surah.number} value={surah.number}>
-                {String(surah.number).padStart(3, '0')} · {surah.name}
+          <label className="field-label" htmlFor="sura-select">Sura</label>
+          <select id="sura-select" value={location.sura} onChange={changeSura}>
+            {suras.map((sura) => (
+              <option key={sura.number} value={sura.number}>
+                {String(sura.number).padStart(3, '0')} · {sura.name}
               </option>
             ))}
           </select>
 
           <form className="location-form" key={`${location.sura}:${location.aya}`} onSubmit={submitLocation}>
-            <label className="field-label" htmlFor="sura-input">Go to ayah</label>
+            <label className="field-label" htmlFor="sura-input">Go to aya</label>
             <div className="location-fields">
-              <input id="sura-input" name="sura" type="number" min="1" max="114" defaultValue={location.sura} aria-label="Surah number" />
+              <input id="sura-input" name="sura" type="number" min="1" max="114" defaultValue={location.sura} aria-label="Sura number" />
               <span>:</span>
-              <input name="aya" type="number" min="1" defaultValue={location.aya} aria-label="Ayah number" />
+              <input name="aya" type="number" min="1" defaultValue={location.aya} aria-label="Aya number" />
               <button className="go-button" type="submit">Go</button>
             </div>
           </form>
@@ -352,7 +352,7 @@ function App() {
                 }
               }}
             />
-            <span>Play Persian translation audio after each ayah</span>
+            <span>Play Persian translation audio after each aya</span>
           </label>
 
           <div className="font-size-control">
@@ -379,15 +379,15 @@ function App() {
           {!loading && reader && (
             <div className="quran-page">
               <div className="quran-page-header">
-                <div className="quran-surah-name" dir="rtl">
-                  <strong>{currentSurah ? `سورة ${currentSurah.arabicName}` : `سورة ${arabicNumber(location.sura)}`}</strong>
+                <div className="quran-sura-name" dir="rtl">
+                  <strong>{currentSura ? `سورة ${currentSura.arabicName}` : `سورة ${arabicNumber(location.sura)}`}</strong>
                   <small
-                    title={currentSurah
-                      ? `${currentSurah.name}; ${currentSurah.revelationType}; revelation order ${currentSurah.revelationOrder}; ${currentSurah.rukuCount} rukus`
+                    title={currentSura
+                      ? `${currentSura.name}; ${currentSura.revelationType}; revelation order ${currentSura.revelationOrder}; ${currentSura.rukuCount} rukus`
                       : undefined}
                   >
-                    {currentSurah?.meaning || currentSurah?.name}
-                    {currentSurah?.revelationType && ` · ${currentSurah.revelationType}`}
+                    {currentSura?.meaning || currentSura?.name}
+                    {currentSura?.revelationType && ` · ${currentSura.revelationType}`}
                   </small>
                 </div>
                 <div className="quran-page-navigation" dir="ltr">
@@ -413,7 +413,7 @@ function App() {
                 </div>
                 <div className="quran-edition-name" dir="rtl">
                   <strong>مصحف المدينة</strong>
-                  <small>{currentSurah?.ayahCount || '—'} ayahs · Juz {reader.current.juz}</small>
+                  <small>{currentSura?.ayaCount || '—'} ayas · Juz {reader.current.juz}</small>
                 </div>
               </div>
 
@@ -422,12 +422,12 @@ function App() {
                 <div className="quran-text" style={{ '--arabic-scale': fontScale }}>
                   {reader.verses.map((verse) => {
                     const active = verse.sura === location.sura && verse.aya === location.aya;
-                    const verseSurah = surahs.find((surah) => surah.number === verse.sura);
+                    const verseSura = suras.find((sura) => sura.number === verse.sura);
                     return (
                       <Fragment key={`${verse.sura}:${verse.aya}`}>
                         {(verse.aya === 0 || (verse.aya === 1 && (verse.sura === 1 || verse.sura === 9))) && (
                           <div className="sura-heading-frame" lang="ar" dir="rtl">
-                            <span>سورة {verseSurah?.arabicName || arabicNumber(verse.sura)}</span>
+                            <span>سورة {verseSura?.arabicName || arabicNumber(verse.sura)}</span>
                           </div>
                         )}
                         {verse.aya === 0 ? (
@@ -440,7 +440,7 @@ function App() {
                           </span>
                         ) : (
                           <span
-                            className={`ayah ${active ? 'ayah-selected' : ''}`}
+                            className={`aya ${active ? 'aya-selected' : ''}`}
                             id={`verse-${verse.sura}-${verse.aya}`}
                             lang="ar"
                             dir="rtl"
@@ -450,7 +450,7 @@ function App() {
                             onKeyDown={(event) => navigateOnKeyDown(event, verse.sura, verse.aya)}
                           >
                             {' '}<QuranText text={verse.text} showSigns={showSigns} />{' '}
-                            <span className="ayaNumber" aria-hidden="true">{formatAyahNumber(verse.aya)}</span>
+                            <span className="ayaNumber" aria-hidden="true">{formatAyaNumber(verse.aya)}</span>
                           </span>
                         )}
                       </Fragment>
@@ -481,7 +481,7 @@ function App() {
             <div className="audio-copy">
               <span className="audio-icon" aria-hidden="true">♫</span>
               <span>
-                <strong>{audioTrack === 'translation' ? 'Playing translation' : 'Listen to this ayah'}</strong>
+                <strong>{audioTrack === 'translation' ? 'Playing translation' : 'Listen to this aya'}</strong>
                 <small>
                   {location.sura}:{location.aya} · {audioTrack === 'translation'
                     ? 'Fooladvand Persian'
@@ -501,8 +501,8 @@ function App() {
               onError={() => {
                 setIsPlaying(false);
                 setError(audioTrack === 'translation'
-                  ? 'Translation audio is not available for this ayah.'
-                  : 'This ayah audio file is not available in the selected local recitation.');
+                  ? 'Translation audio is not available for this aya.'
+                  : 'This aya audio file is not available in the selected local recitation.');
               }}
             >
               Your browser does not support audio playback.

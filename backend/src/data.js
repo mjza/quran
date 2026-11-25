@@ -97,15 +97,15 @@ export const PAGE_STARTS = `
 112:1
 `
   .trim()
-  .split(',')
+  .split(",")
   .map((item) => item.trim())
   .filter(Boolean)
   .map((item) => {
-    const [sura, aya] = item.split(':').map(Number);
+    const [sura, aya] = item.split(":").map(Number);
     return { sura, aya };
   });
 
-export const SURAH_METADATA = `
+export const SURA_METADATA = `
 0|7|5|1|الفاتحة|Al-Fatiha|The Opening|Meccan
 7|286|87|40|البقرة|Al-Baqara|The Heifer|Medinan
 293|200|89|20|آل عمران|Aal-i-Imran|The Family of Imran|Medinan
@@ -226,19 +226,19 @@ export const SURAH_METADATA = `
   .map((row, index) => {
     const [
       startIndex,
-      ayahCount,
+      ayaCount,
       revelationOrder,
       rukuCount,
       arabicName,
       name,
       meaning,
       revelationType,
-    ] = row.split('|');
+    ] = row.split("|");
 
     return {
       number: index + 1,
       startVerseIndex: Number(startIndex) + 1,
-      ayahCount: Number(ayahCount),
+      ayaCount: Number(ayaCount),
       revelationOrder: Number(revelationOrder),
       rukuCount: Number(rukuCount),
       arabicName,
@@ -254,10 +254,10 @@ export const JUZ_STARTS = `
 29:46,33:31,36:28,39:32,41:47,46:1,51:31,58:1,67:1,78:1
 `
   .trim()
-  .split(',')
+  .split(",")
   .map((item) => item.trim())
   .map((item) => {
-    const [sura, aya] = item.split(':').map(Number);
+    const [sura, aya] = item.split(":").map(Number);
     return { sura, aya };
   });
 

@@ -1,20 +1,28 @@
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import Database from 'better-sqlite3';
-import express from 'express';
-import { getJuzNumber, PAGE_STARTS, SURAH_METADATA } from './data.js';
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import Database from "better-sqlite3";
+import express from "express";
+import { getJuzNumber, PAGE_STARTS, SURA_METADATA } from "./data.js";
 
-const backendDirectory = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const projectDirectory = path.resolve(backendDirectory, '..');
-const databasePath = path.join(projectDirectory, 'data', 'quran.sqlite');
-const audioDirectory = path.join(projectDirectory, 'data', 'audio', 'recitations');
+const backendDirectory = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "..",
+);
+const projectDirectory = path.resolve(backendDirectory, "..");
+const databasePath = path.join(projectDirectory, "data", "quran.sqlite");
+const audioDirectory = path.join(
+  projectDirectory,
+  "data",
+  "audio",
+  "recitations",
+);
 const translationAudioDirectory = path.join(
   projectDirectory,
-  'data',
-  'audio',
-  'translations',
-  'Persian_Fooladvand_Hedayatfar_40Kbps',
+  "data",
+  "audio",
+  "translations",
+  "Persian_Fooladvand_Hedayatfar_40Kbps",
 );
 const port = Number(process.env.PORT || 3001);
 
@@ -24,17 +32,19 @@ if (!fs.existsSync(databasePath)) {
 
 const db = new Database(databasePath);
 const editions = new Set([
-  'quran_text_simple',
-  'quran_text_simple_clean',
-  'quran_text_simple_min',
-  'quran_text_simple_plain',
-  'quran_text_uthmani',
-  'quran_text_uthmani_min',
+  "quran_text_simple",
+  "quran_text_simple_clean",
+  "quran_text_simple_min",
+  "quran_text_simple_plain",
+  "quran_text_uthmani",
+  "quran_text_uthmani_min",
 ]);
 
 function seedPageBounds() {
   if (PAGE_STARTS.length !== 604) {
-    throw new Error(`Expected 604 Madinah page starts, got ${PAGE_STARTS.length}`);
+    throw new Error(
+      `Expected 604 Madinah page starts, got ${PAGE_STARTS.length}`,
+    );
   }
 
   db.exec(`
@@ -49,7 +59,9 @@ function seedPageBounds() {
     )
   `);
 
-  const existing = db.prepare('SELECT COUNT(*) AS count FROM quran_pages').get().count;
+  const existing = db
+    .prepare("SELECT COUNT(*) AS count FROM quran_pages")
+    .get().count;
   if (existing === 604) {
     return;
   }
@@ -60,9 +72,11 @@ function seedPageBounds() {
   const verseAt = db.prepare(
     'SELECT "index" AS verseIndex, sura, aya FROM quran_text_uthmani WHERE sura = ? AND aya = ?',
   );
-  const finalVerse = db.prepare(
-    'SELECT "index" AS verseIndex, sura, aya FROM quran_text_uthmani ORDER BY "index" DESC LIMIT 1',
-  ).get();
+  const finalVerse = db
+    .prepare(
+      'SELECT "index" AS verseIndex, sura, aya FROM quran_text_uthmani ORDER BY "index" DESC LIMIT 1',
+    )
+    .get();
   const pageRows = [];
 
   for (let index = 0; index < PAGE_STARTS.length; index += 1) {
@@ -77,11 +91,15 @@ function seedPageBounds() {
     if (nextStart) {
       const nextVerse = verseAt.get(nextStart.sura, nextStart.aya);
       if (!nextVerse) {
-        throw new Error(`Missing page start verse ${nextStart.sura}:${nextStart.aya}`);
+        throw new Error(
+          `Missing page start verse ${nextStart.sura}:${nextStart.aya}`,
+        );
       }
-      endVerse = db.prepare(
-        'SELECT "index" AS verseIndex, sura, aya FROM quran_text_uthmani WHERE "index" = ?',
-      ).get(nextVerse.verseIndex - 1);
+      endVerse = db
+        .prepare(
+          'SELECT "index" AS verseIndex, sura, aya FROM quran_text_uthmani WHERE "index" = ?',
+        )
+        .get(nextVerse.verseIndex - 1);
       if (!endVerse) {
         throw new Error(`Cannot determine the end of page ${index + 1}`);
       }
@@ -114,13 +132,17 @@ function seedPageBounds() {
 seedPageBounds();
 
 const reciters = fs.existsSync(audioDirectory)
-  ? fs.readdirSync(audioDirectory, { withFileTypes: true })
+  ? fs
+      .readdirSync(audioDirectory, { withFileTypes: true })
       .filter((entry) => entry.isDirectory())
-      .map((entry) => ({ id: entry.name, name: entry.name.replace(/_\d+kbps$/i, '') }))
+      .map((entry) => ({
+        id: entry.name,
+        name: entry.name.replace(/_\d+kbps$/i, ""),
+      }))
   : [];
 
 const app = express();
-app.disable('x-powered-by');
+app.disable("x-powered-by");
 
 function positiveInteger(value, name) {
   const parsed = Number(value);
@@ -140,90 +162,118 @@ function selectedEdition(value) {
 }
 
 function normalizeArabic(text) {
-  return text.normalize('NFD').replace(/\p{M}/gu, '').replace(/ٱ/g, 'ا');
+  return text.normalize("NFD").replace(/\p{M}/gu, "").replace(/ٱ/g, "ا");
 }
 
 function hasBasmalaAya(sura) {
   return sura !== 1 && sura !== 9;
 }
 
-app.get('/api/health', (_request, response) => {
-  response.json({ status: 'ok' });
+app.get("/api/health", (_request, response) => {
+  response.json({ status: "ok" });
 });
 
-app.get('/api/surahs', (_request, response) => {
-  const chapters = db.prepare(`
-    SELECT sura AS number, MIN("index") AS startVerseIndex, COUNT(*) AS ayahCount
+app.get("/api/suras", (_request, response) => {
+  const chapters = db
+    .prepare(
+      `
+    SELECT sura AS number, MIN("index") AS startVerseIndex, COUNT(*) AS ayaCount
     FROM quran_text_uthmani
     GROUP BY sura
     ORDER BY sura
-  `).all();
+  `,
+    )
+    .all();
 
-  response.json(chapters.map((chapter) => {
-    const metadata = SURAH_METADATA[chapter.number - 1];
-    if (
-      !metadata
-      || metadata.number !== chapter.number
-      || metadata.startVerseIndex !== chapter.startVerseIndex
-      || metadata.ayahCount !== chapter.ayahCount
-    ) {
-      throw new Error(`Surah metadata mismatch for surah ${chapter.number}.`);
-    }
-    return metadata;
-  }));
+  response.json(
+    chapters.map((chapter) => {
+      const metadata = SURA_METADATA[chapter.number - 1];
+      if (
+        !metadata ||
+        metadata.number !== chapter.number ||
+        metadata.startVerseIndex !== chapter.startVerseIndex ||
+        metadata.ayaCount !== chapter.ayaCount
+      ) {
+        throw new Error(`Sura metadata mismatch for sura ${chapter.number}.`);
+      }
+      return metadata;
+    }),
+  );
 });
 
-app.get('/api/pages/:page', (request, response) => {
-  const page = positiveInteger(request.params.page, 'page');
+app.get("/api/pages/:page", (request, response) => {
+  const page = positiveInteger(request.params.page, "page");
   if (!page || page > 604) {
-    response.status(400).json({ error: 'Page must be between 1 and 604.' });
+    response.status(400).json({ error: "Page must be between 1 and 604." });
     return;
   }
 
-  const bounds = db.prepare(`
+  const bounds = db
+    .prepare(
+      `
     SELECT page, start_sura AS startSura,
       start_aya AS startAya,
       end_sura AS endSura, end_aya AS endAya
     FROM quran_pages
     WHERE page = ?
-  `).get(page);
+  `,
+    )
+    .get(page);
 
   response.json(bounds);
 });
 
-app.get('/api/reader', (request, response) => {
-  const sura = positiveInteger(request.query.sura, 'sura');
+app.get("/api/reader", (request, response) => {
+  const sura = positiveInteger(request.query.sura, "sura");
   const aya = nonNegativeInteger(request.query.aya);
-  const edition = selectedEdition(request.query.edition || 'quran_text_uthmani');
+  const edition = selectedEdition(
+    request.query.edition || "quran_text_uthmani",
+  );
 
-  if (!sura || sura > 114 || aya === null || !edition || (aya === 0 && !hasBasmalaAya(sura))) {
-    response.status(400).json({ error: 'Provide a valid sura, aya, and text edition.' });
+  if (
+    !sura ||
+    sura > 114 ||
+    aya === null ||
+    !edition ||
+    (aya === 0 && !hasBasmalaAya(sura))
+  ) {
+    response
+      .status(400)
+      .json({ error: "Provide a valid sura, aya, and text edition." });
     return;
   }
 
   const verseAya = aya === 0 ? 1 : aya;
-  const currentVerse = db.prepare(
-    'SELECT "index" AS verseIndex FROM quran_text_uthmani WHERE sura = ? AND aya = ?',
-  ).get(sura, verseAya);
+  const currentVerse = db
+    .prepare(
+      'SELECT "index" AS verseIndex FROM quran_text_uthmani WHERE sura = ? AND aya = ?',
+    )
+    .get(sura, verseAya);
   if (!currentVerse) {
-    response.status(404).json({ error: 'Verse not found.' });
+    response.status(404).json({ error: "Verse not found." });
     return;
   }
 
-  const page = db.prepare(`
+  const page = db
+    .prepare(
+      `
     SELECT page, start_sura AS startSura, start_aya AS startAya,
       end_sura AS endSura, end_aya AS endAya, start_index AS startIndex, end_index AS endIndex
     FROM quran_pages
     WHERE start_index <= ? AND end_index >= ?
-  `).get(currentVerse.verseIndex, currentVerse.verseIndex);
+  `,
+    )
+    .get(currentVerse.verseIndex, currentVerse.verseIndex);
 
-  const basmala = db.prepare(
-    `SELECT text FROM ${edition} WHERE sura = 1 AND aya = 1`,
-  ).get().text;
-  const basmalaTranslation = db.prepare(
-    'SELECT text FROM fa_fooladvand WHERE sura = 1 AND aya = 1',
-  ).get().text;
-  const verses = db.prepare(`
+  const basmala = db
+    .prepare(`SELECT text FROM ${edition} WHERE sura = 1 AND aya = 1`)
+    .get().text;
+  const basmalaTranslation = db
+    .prepare("SELECT text FROM fa_fooladvand WHERE sura = 1 AND aya = 1")
+    .get().text;
+  const verses = db
+    .prepare(
+      `
     SELECT base.sura, base.aya, edition.text AS text, translation.text AS translation
     FROM quran_text_uthmani AS base
     JOIN ${edition} AS edition ON edition."index" = base."index"
@@ -231,7 +281,9 @@ app.get('/api/reader', (request, response) => {
       ON translation.sura = base.sura AND translation.aya = base.aya
     WHERE base."index" BETWEEN ? AND ?
     ORDER BY base."index"
-  `).all(page.startIndex, page.endIndex);
+  `,
+    )
+    .all(page.startIndex, page.endIndex);
   const displayVerses = [];
   for (const verse of verses) {
     if (verse.aya !== 1 || verse.sura === 1 || verse.sura === 9) {
@@ -240,9 +292,11 @@ app.get('/api/reader', (request, response) => {
     }
 
     const words = verse.text.trim().split(/\s+/);
-    const sourceBasmala = words.slice(0, 4).join(' ');
+    const sourceBasmala = words.slice(0, 4).join(" ");
     if (normalizeArabic(sourceBasmala) !== normalizeArabic(basmala)) {
-      throw new Error(`Unexpected basmala text in ${edition} at ${verse.sura}:1`);
+      throw new Error(
+        `Unexpected basmala text in ${edition} at ${verse.sura}:1`,
+      );
     }
 
     displayVerses.push({
@@ -253,7 +307,7 @@ app.get('/api/reader', (request, response) => {
     });
     displayVerses.push({
       ...verse,
-      text: words.slice(4).join(' '),
+      text: words.slice(4).join(" "),
     });
   }
 
@@ -268,17 +322,24 @@ app.get('/api/reader', (request, response) => {
   });
 });
 
-app.get('/api/reciters', (_request, response) => {
+app.get("/api/reciters", (_request, response) => {
   response.json(reciters);
 });
 
-app.get('/api/audio/:sura/:aya', (request, response) => {
-  const sura = positiveInteger(request.params.sura, 'sura');
+app.get("/api/audio/:sura/:aya", (request, response) => {
+  const sura = positiveInteger(request.params.sura, "sura");
   const aya = nonNegativeInteger(request.params.aya);
-  const reciter = reciters.find((item) => item.id === request.query.reciter) || reciters[0];
+  const reciter =
+    reciters.find((item) => item.id === request.query.reciter) || reciters[0];
 
-  if (!sura || sura > 114 || aya === null || !reciter || (aya === 0 && !hasBasmalaAya(sura))) {
-    response.status(400).json({ error: 'Invalid audio request.' });
+  if (
+    !sura ||
+    sura > 114 ||
+    aya === null ||
+    !reciter ||
+    (aya === 0 && !hasBasmalaAya(sura))
+  ) {
+    response.status(400).json({ error: "Invalid audio request." });
     return;
   }
 
@@ -287,22 +348,29 @@ app.get('/api/audio/:sura/:aya', (request, response) => {
   const audioPath = path.join(
     audioDirectory,
     reciter.id,
-    `${String(audioSura).padStart(3, '0')}${String(audioAya).padStart(3, '0')}.mp3`,
+    `${String(audioSura).padStart(3, "0")}${String(audioAya).padStart(3, "0")}.mp3`,
   );
   if (!fs.existsSync(audioPath)) {
-    response.status(404).json({ error: 'Audio file not found for this verse.' });
+    response
+      .status(404)
+      .json({ error: "Audio file not found for this verse." });
     return;
   }
 
   response.sendFile(audioPath);
 });
 
-app.get('/api/translation-audio/:sura/:aya', (request, response) => {
-  const sura = positiveInteger(request.params.sura, 'sura');
+app.get("/api/translation-audio/:sura/:aya", (request, response) => {
+  const sura = positiveInteger(request.params.sura, "sura");
   const aya = nonNegativeInteger(request.params.aya);
 
-  if (!sura || sura > 114 || aya === null || (aya === 0 && !hasBasmalaAya(sura))) {
-    response.status(400).json({ error: 'Invalid translation audio request.' });
+  if (
+    !sura ||
+    sura > 114 ||
+    aya === null ||
+    (aya === 0 && !hasBasmalaAya(sura))
+  ) {
+    response.status(400).json({ error: "Invalid translation audio request." });
     return;
   }
 
@@ -310,24 +378,26 @@ app.get('/api/translation-audio/:sura/:aya', (request, response) => {
   const audioAya = aya === 0 ? 1 : aya;
   const audioPath = path.join(
     translationAudioDirectory,
-    `${String(audioSura).padStart(3, '0')}${String(audioAya).padStart(3, '0')}.mp3`,
+    `${String(audioSura).padStart(3, "0")}${String(audioAya).padStart(3, "0")}.mp3`,
   );
   if (!fs.existsSync(audioPath)) {
-    response.status(404).json({ error: 'Translation audio file not found for this verse.' });
+    response
+      .status(404)
+      .json({ error: "Translation audio file not found for this verse." });
     return;
   }
 
   response.sendFile(audioPath);
 });
 
-const clientBuild = path.join(projectDirectory, 'dist');
+const clientBuild = path.join(projectDirectory, "dist");
 if (fs.existsSync(clientBuild)) {
   app.use(express.static(clientBuild));
-  app.get('*', (_request, response) => {
-    response.sendFile(path.join(clientBuild, 'index.html'));
+  app.get("*", (_request, response) => {
+    response.sendFile(path.join(clientBuild, "index.html"));
   });
 }
 
-app.listen(port, '127.0.0.1', () => {
+app.listen(port, "127.0.0.1", () => {
   console.log(`Quran API listening at http://127.0.0.1:${port}`);
 });

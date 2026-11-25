@@ -279,7 +279,7 @@ button {
   min-height: 66px;
   border-bottom: 1px solid #e0dac5;
 }
-.quran-surah-name,
+.quran-sura-name,
 .quran-edition-name {
   display: flex;
   flex-direction: column;
@@ -289,13 +289,13 @@ button {
 .quran-edition-name {
   text-align: right;
 }
-.quran-surah-name strong,
+.quran-sura-name strong,
 .quran-edition-name strong {
   color: #315440;
   font-family: hafs, "Times New Roman", serif;
   font-size: 18px;
 }
-.quran-surah-name small,
+.quran-sura-name small,
 .quran-edition-name small {
   color: #858273;
   font-family: "Segoe UI", Tahoma, sans-serif;
@@ -338,7 +338,7 @@ button {
 .quran-page-navigation input:focus-visible,
 .quran-page-navigation button:focus-visible,
 .quran-page-footer button:focus-visible,
-.ayah:focus-visible {
+.aya:focus-visible {
   outline: 2px solid #688364;
   outline-offset: 2px;
 }
@@ -386,22 +386,22 @@ button {
   font-family: "Segoe UI", Tahoma, sans-serif;
   font-size: 10px;
 }
-.ayah,
+.aya,
 .basmala {
   color: inherit;
   font: inherit;
   -webkit-tap-highlight-color: transparent;
 }
-.ayah {
+.aya {
   display: inline;
   border-radius: 4px;
   cursor: pointer;
   transition: background-color 0.2s ease;
 }
-.ayah:hover {
+.aya:hover {
   background: #e7eddc;
 }
-.ayah.ayah-selected {
+.aya.aya-selected {
   background: #dce8ce;
 }
 .ayaNumber {
@@ -626,11 +626,11 @@ button {
     padding: 8px 9px;
     gap: 3px;
   }
-  .quran-surah-name strong,
+  .quran-sura-name strong,
   .quran-edition-name strong {
     font-size: 15px;
   }
-  .quran-surah-name small,
+  .quran-sura-name small,
   .quran-edition-name small {
     font-size: 9px;
   }
