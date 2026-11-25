@@ -351,6 +351,7 @@ button {
   background-repeat: no-repeat;
 }
 .quran-frame-middle {
+  position: relative;
   background-position: 100% 0;
   line-height: 2.2;
 }
@@ -398,8 +399,9 @@ button {
   cursor: pointer;
   transition: background-color 0.2s ease;
 }
-.aya:hover {
-  background: #e7eddc;
+.aya:hover,
+.aya.aya-hovered {
+  background: #dbeafe;
 }
 .aya.aya-selected {
   background: #dce8ce;
@@ -409,6 +411,9 @@ button {
   font-family: hafs;
   font-size: 0.91em;
   white-space: nowrap; /* prevent its text from breaking onto a second line */
+}
+.aya-end-token {
+  white-space: nowrap;
 }
 .sign,
 .internal-sign,
@@ -438,24 +443,52 @@ button {
   font-size: 1.08em;
   text-align: center;
 }
-.translation-list {
-  margin: 0 27px;
-  padding-top: 8px;
-  border-top: 1px solid #e9e3cf;
+.basmala-row {
+  display: block;
 }
-.translation {
-  margin: 0;
-  padding: 8px 0;
+.quran-line-measure {
+  position: absolute;
+  inset: 0 0 auto;
+  visibility: hidden;
+  pointer-events: none;
+}
+.arabic-line {
+  line-height: 2.2;
+  text-align: justify;
+  text-align-last: justify;
+  white-space: nowrap;
+}
+.arabic-line.last-in-stream,
+.translation-line.last-in-stream {
+  text-align-last: auto;
+}
+.basmala-line {
+  text-align: center;
+  text-align-last: auto;
+}
+.translation-stream-measure,
+.translation-line,
+.translation-basmala {
   color: #5f665c;
-  border-bottom: 1px solid #eee9dc;
   font-family: "Segoe UI", Tahoma, sans-serif;
   font-size: 14px;
   line-height: 1.8;
+  text-align: justify;
 }
-.translation-reference {
-  margin-inline-end: 8px;
+.translation-line {
+  margin: 0 0 4px;
+  text-align-last: justify;
+  white-space: nowrap;
+}
+.translation-basmala {
+  margin: 0 0 4px;
+  text-align: center;
+}
+.translation-aya-number {
+  margin-inline-start: 6px;
   color: #789078;
   font-size: 10px;
+  white-space: nowrap;
 }
 .quran-page-footer {
   min-height: 45px;
@@ -659,12 +692,10 @@ button {
     gap: 5px;
     font-size: 18px;
   }
-  .translation {
+  .translation-stream-measure,
+  .translation-line,
+  .translation-basmala {
     font-size: 15px;
-  }
-  .translation-list {
-    margin-right: 18px;
-    margin-left: 18px;
   }
   .audio-player {
     align-items: stretch;

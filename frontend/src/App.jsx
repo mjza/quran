@@ -2,6 +2,7 @@ import {
   Fragment,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -44,15 +45,583 @@ function readHash() {
   return { sura: Number(match[1]), aya: aya === 0 ? 1 : aya };
 }
 
-function QuranText({ text, showSigns, isJuzStart }) {
-  return formatQuranText(text, { showSigns, isJuzStart }).map((part, index) =>
-    typeof part === "string" ? (
-      part
-    ) : (
-      <span key={index} className={part.className}>
-        {part.text}
+function splitFormattedText(parts) {
+  const tokens = [];
+  let pendingWhitespace = "";
+
+  for (const part of parts) {
+    if (typeof part !== "string") {
+      tokens.push({
+        leading: pendingWhitespace,
+        text: part.text,
+        className: part.className,
+        trailing: "",
+      });
+      pendingWhitespace = "";
+      continue;
+    }
+
+    let cursor = 0;
+    for (const match of part.matchAll(/\S+/gu)) {
+      tokens.push({
+        leading: pendingWhitespace + part.slice(cursor, match.index),
+        text: match[0],
+        trailing: "",
+      });
+      pendingWhitespace = "";
+      cursor = match.index + match[0].length;
+    }
+    pendingWhitespace += part.slice(cursor);
+  }
+
+  if (pendingWhitespace && tokens.length) {
+    tokens[tokens.length - 1].trailing += pendingWhitespace;
+  }
+  return tokens;
+}
+
+function buildQuranStreams(verses, suras, showSigns, juzStarts) {
+  const arabicItems = [];
+  const arabicTokens = [];
+  const basmalaTranslations = [];
+  const translationTokens = [];
+  let arabicIndex = 0;
+  let translationIndex = 0;
+  let hasTranslation = false;
+
+  for (const verse of verses) {
+    if (
+      verse.aya === 0 ||
+      (verse.aya === 1 && (verse.sura === 1 || verse.sura === 9))
+    ) {
+      const sura = suras.find((item) => item.number === verse.sura);
+      arabicItems.push({
+        kind: "heading",
+        key: `heading-${verse.sura}:${verse.aya}`,
+        title: `سورة ${sura?.arabicName || arabicNumber(verse.sura)}`,
+      });
+    }
+
+    const isJuzStart = juzStarts.some(
+      (start) =>
+        start.startSura === verse.sura && start.startAya === verse.aya,
+    );
+    const verseTokens = splitFormattedText(
+      formatQuranText(verse.text, { showSigns, isJuzStart }),
+    ).map((token) => ({
+      ...token,
+      index: arabicIndex++,
+      verse,
+      isAyaNumber: false,
+    }));
+
+    if (verse.aya === 0) {
+      arabicItems.push({
+        kind: "basmala",
+        key: `basmala-${verse.sura}`,
+        verse,
+        tokens: verseTokens,
+      });
+    } else {
+      const lastToken = verseTokens[verseTokens.length - 1];
+      if (lastToken) {
+        lastToken.text = lastToken.text.replace(/\s+$/u, "");
+        lastToken.trailing = lastToken.trailing.replace(/\s+$/u, "");
+        lastToken.endingMarker = formatAyaNumber(verse.aya);
+        lastToken.endingSpace = true;
+      } else {
+        verseTokens.push({
+          index: arabicIndex++,
+          leading: " ",
+          text: formatAyaNumber(verse.aya),
+          trailing: " ",
+          className: "ayaNumber",
+          verse,
+          isAyaNumber: true,
+        });
+      }
+      for (const token of verseTokens) {
+        arabicItems.push({ kind: "token", token });
+      }
+    }
+    arabicTokens.push(...verseTokens);
+
+    if (verse.aya === 0 && verse.translation) {
+      basmalaTranslations.push(verse);
+    } else if (verse.translation) {
+      const textTokens = splitFormattedText([verse.translation]);
+      if (hasTranslation && textTokens.length) {
+        textTokens[0].leading = ` ${textTokens[0].leading}`;
+      }
+      for (const token of textTokens) {
+        translationTokens.push({
+          ...token,
+          index: translationIndex++,
+          verse,
+        });
+      }
+      if (verse.aya > 0) {
+        translationTokens.push({
+          index: translationIndex++,
+          leading: "\u00a0",
+          text: formatAyaNumber(verse.aya),
+          trailing: "",
+          className: "translation-aya-number",
+          verse,
+        });
+      }
+      hasTranslation = true;
+    }
+  }
+
+  return {
+    arabicItems,
+    arabicTokens,
+    basmalaTranslations,
+    translationTokens,
+  };
+}
+
+function renderToken(token, measure = false) {
+  return (
+    <Fragment key={token.index}>
+      <span
+        className={[
+          token.className,
+          token.endingMarker && "aya-end-token",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        data-quran-token={measure ? token.index : undefined}
+      >
+        {`${token.leading}${token.text}${token.trailing}`}
+        {token.endingMarker && (
+          <span className="ayaNumber" aria-hidden="true">
+            {" "}
+            {token.endingMarker}
+          </span>
+        )}
+        {token.endingSpace && " "}
       </span>
-    ),
+      {token.endingMarker && <wbr />}
+    </Fragment>
+  );
+}
+
+function renderSuraHeading(item) {
+  return (
+    <div key={item.key} className="sura-heading-frame" lang="ar" dir="rtl">
+      <span>{item.title}</span>
+    </div>
+  );
+}
+
+function measureTokenLines(node, tokens) {
+  if (!node) {
+    return [];
+  }
+
+  const lineHeight = Number.parseFloat(getComputedStyle(node).lineHeight);
+  const threshold = Number.isFinite(lineHeight) ? lineHeight / 2 : 12;
+  const lineMap = [];
+  let line = -1;
+  let lineTop = null;
+  const tokenNodes = new Map(
+    Array.from(node.querySelectorAll("[data-quran-token]"), (tokenNode) => [
+      Number(tokenNode.dataset.quranToken),
+      tokenNode,
+    ]),
+  );
+
+  for (const token of tokens) {
+    const tokenNode = tokenNodes.get(token.index);
+    const textNode = tokenNode?.firstChild;
+    if (!textNode || !token.text.length) {
+      continue;
+    }
+    const range = document.createRange();
+    range.setStart(textNode, token.leading.length);
+    range.setEnd(textNode, token.leading.length + token.text.length);
+    const top = range.getBoundingClientRect().top;
+
+    if (lineTop === null || top - lineTop > threshold) {
+      line += 1;
+      lineTop = top;
+    }
+    lineMap[token.index] = line;
+  }
+
+  return lineMap;
+}
+
+function QuranLines({
+  verses,
+  suras,
+  showTranslation,
+  showSigns,
+  juzStarts,
+  fontScale,
+  location,
+  navigate,
+  navigateOnKeyDown,
+}) {
+  const arabicMeasureRef = useRef(null);
+  const translationMeasureRef = useRef(null);
+  const [lineMaps, setLineMaps] = useState(null);
+  const streams = useMemo(
+    () => buildQuranStreams(verses, suras, showSigns, juzStarts),
+    [verses, suras, showSigns, juzStarts],
+  );
+  const fontStyle = { "--arabic-scale": fontScale };
+  const [hoveredVerse, setHoveredVerse] = useState(null);
+
+  useLayoutEffect(() => {
+    if (!showTranslation) {
+      setLineMaps(null);
+      return undefined;
+    }
+
+    let active = true;
+    const measureLines = () => {
+      if (!active) {
+        return;
+      }
+      const nextLineMaps = {
+        arabic: measureTokenLines(
+          arabicMeasureRef.current,
+          streams.arabicTokens,
+        ),
+        translation: measureTokenLines(
+          translationMeasureRef.current,
+          streams.translationTokens,
+        ),
+      };
+
+      setLineMaps((current) => {
+        const sameMap = (left, right) =>
+          left.length === right.length &&
+          left.every((value, index) => value === right[index]);
+        if (
+          current &&
+          sameMap(current.arabic, nextLineMaps.arabic) &&
+          sameMap(current.translation, nextLineMaps.translation)
+        ) {
+          return current;
+        }
+        return nextLineMaps;
+      });
+    };
+
+    measureLines();
+    const observer = new ResizeObserver(measureLines);
+    for (const node of [
+      arabicMeasureRef.current,
+      translationMeasureRef.current,
+    ]) {
+      if (node) {
+        observer.observe(node);
+      }
+    }
+    window.addEventListener("resize", measureLines);
+    document.fonts?.ready.then(() => {
+      if (active) {
+        measureLines();
+      }
+    });
+    return () => {
+      active = false;
+      observer.disconnect();
+      window.removeEventListener("resize", measureLines);
+    };
+  }, [streams, showTranslation, fontScale]);
+
+  const seenVerses = new Set();
+  const renderAyaFragment = (tokens, key) => {
+    const verse = tokens[0].verse;
+    const verseKey = `${verse.sura}:${verse.aya}`;
+    const isFirstFragment = !seenVerses.has(verseKey);
+    seenVerses.add(verseKey);
+    const active =
+      verse.sura === location.sura && verse.aya === location.aya;
+    const hovered = hoveredVerse === verseKey;
+
+    return (
+      <span
+        key={key}
+        className={`aya ${active ? "aya-selected" : ""} ${
+          hovered ? "aya-hovered" : ""
+        }`}
+        id={isFirstFragment ? `verse-${verse.sura}-${verse.aya}` : undefined}
+        lang="ar"
+        dir="rtl"
+        role={isFirstFragment ? "button" : undefined}
+        tabIndex={isFirstFragment ? 0 : undefined}
+        onClick={() => navigate(verse.sura, verse.aya)}
+        onKeyDown={
+          isFirstFragment
+            ? (event) => navigateOnKeyDown(event, verse.sura, verse.aya)
+            : undefined
+        }
+        onMouseEnter={() => setHoveredVerse(verseKey)}
+        onMouseLeave={() =>
+          setHoveredVerse((current) => (current === verseKey ? null : current))
+        }
+        onFocus={() => setHoveredVerse(verseKey)}
+        onBlur={() =>
+          setHoveredVerse((current) => (current === verseKey ? null : current))
+        }
+      >
+        {tokens.map((token) => renderToken(token))}
+      </span>
+    );
+  };
+
+  const renderContinuousArabic = () => {
+    const output = [];
+    for (let index = 0; index < streams.arabicItems.length; ) {
+      const item = streams.arabicItems[index];
+      if (item.kind === "heading") {
+        output.push(renderSuraHeading(item));
+        index += 1;
+      } else if (item.kind === "basmala") {
+        output.push(
+          <div className="basmala-row" key={item.key}>
+            <span className="basmala" lang="ar" dir="rtl">
+              {item.tokens.map((token) => renderToken(token))}
+            </span>
+          </div>,
+        );
+        index += 1;
+      } else {
+        const tokens = [];
+        while (
+          index < streams.arabicItems.length &&
+          streams.arabicItems[index].kind === "token" &&
+          streams.arabicItems[index].token.verse === item.token.verse
+        ) {
+          tokens.push(streams.arabicItems[index].token);
+          index += 1;
+        }
+        output.push(
+          renderAyaFragment(
+            tokens,
+            `aya-${item.token.verse.sura}:${item.token.verse.aya}`,
+          ),
+        );
+      }
+    }
+    return output;
+  };
+
+  if (!showTranslation) {
+    return (
+      <div className="quran-text" style={fontStyle}>
+        {renderContinuousArabic()}
+      </div>
+    );
+  }
+
+  let pendingHeadings = [];
+  let currentArabicLine = null;
+  const arabicLines = [];
+  const headingsByLine = [];
+  const addArabicLine = (tokens, kind = "arabic") => {
+    const lineIndex = arabicLines.length;
+    headingsByLine[lineIndex] = pendingHeadings;
+    pendingHeadings = [];
+    arabicLines.push({ kind, tokens });
+  };
+  const flushArabicLine = () => {
+    if (currentArabicLine) {
+      addArabicLine(currentArabicLine.tokens);
+      currentArabicLine = null;
+    }
+  };
+
+  for (const item of streams.arabicItems) {
+    if (item.kind === "heading") {
+      flushArabicLine();
+      pendingHeadings.push(item);
+    } else if (item.kind === "basmala") {
+      flushArabicLine();
+      addArabicLine(item.tokens, "basmala");
+    } else {
+      const line = lineMaps?.arabic[item.token.index] ?? 0;
+      if (currentArabicLine && currentArabicLine.line !== line) {
+        flushArabicLine();
+      }
+      if (!currentArabicLine) {
+        currentArabicLine = { line, tokens: [] };
+      }
+      currentArabicLine.tokens.push(item.token);
+    }
+  }
+  flushArabicLine();
+  if (pendingHeadings.length) {
+    headingsByLine[arabicLines.length] = pendingHeadings;
+  }
+
+  const translationLines = [];
+  for (const token of streams.translationTokens) {
+    const line = lineMaps?.translation[token.index] ?? 0;
+    let current = translationLines[translationLines.length - 1];
+    if (!current || current.line !== line) {
+      current = { line, tokens: [] };
+      translationLines.push(current);
+    }
+    current.tokens.push(token);
+  }
+
+  const renderMeasuredArabicLine = (line, index, isLastLine) => {
+    if (line.kind === "basmala") {
+      return (
+        <div className="arabic-line basmala-line" key={`arabic-line-${index}`}>
+          <span className="basmala" lang="ar" dir="rtl">
+            {line.tokens.map((token) => renderToken(token))}
+          </span>
+        </div>
+      );
+    }
+
+    const verseGroups = [];
+    for (const token of line.tokens) {
+      const current = verseGroups[verseGroups.length - 1];
+      if (!current || current.verse !== token.verse) {
+        verseGroups.push({ verse: token.verse, tokens: [token] });
+      } else {
+        current.tokens.push(token);
+      }
+    }
+    return (
+      <div
+        className={`arabic-line ${isLastLine ? "last-in-stream" : ""}`}
+        key={`arabic-line-${index}`}
+      >
+        {verseGroups.map((verseGroup, verseIndex) =>
+          renderAyaFragment(
+            verseGroup.tokens,
+            `line-${index}-aya-${verseGroup.verse.sura}:${verseGroup.verse.aya}-${verseIndex}`,
+          ),
+        )}
+      </div>
+    );
+  };
+
+  const output = [];
+  let arabicIndex = 0;
+  let translationIndex = 0;
+  while (
+    arabicIndex < arabicLines.length ||
+    translationIndex < translationLines.length
+  ) {
+    if (arabicIndex < arabicLines.length) {
+      headingsByLine[arabicIndex]?.forEach((heading) =>
+        output.push(renderSuraHeading(heading)),
+      );
+      const arabicLine = arabicLines[arabicIndex];
+      output.push(
+        renderMeasuredArabicLine(
+          arabicLine,
+          arabicIndex,
+          arabicIndex === arabicLines.length - 1,
+        ),
+      );
+
+      if (arabicLine.kind === "basmala") {
+        const basmalaTranslation = streams.basmalaTranslations.find(
+          (verse) => verse.sura === arabicLine.tokens[0].verse.sura,
+        );
+        if (basmalaTranslation) {
+          output.push(
+            <div
+              className="translation-basmala"
+              lang="fa"
+              dir="rtl"
+              key={`translation-basmala-${basmalaTranslation.sura}`}
+            >
+              {basmalaTranslation.translation}
+            </div>,
+          );
+        }
+      } else if (translationIndex < translationLines.length) {
+        output.push(
+          <div
+            className={`translation-line ${
+              translationIndex === translationLines.length - 1
+                ? "last-in-stream"
+                : ""
+            }`}
+            lang="fa"
+            dir="rtl"
+            key={`translation-line-${translationIndex}`}
+          >
+            {translationLines[translationIndex].tokens.map((token) =>
+              renderToken(token),
+            )}
+          </div>,
+        );
+        translationIndex += 1;
+      }
+      arabicIndex += 1;
+    } else {
+      output.push(
+        <div
+          className={`translation-line ${
+            translationIndex === translationLines.length - 1
+              ? "last-in-stream"
+              : ""
+          }`}
+          lang="fa"
+          dir="rtl"
+          key={`translation-line-${translationIndex}`}
+        >
+          {translationLines[translationIndex].tokens.map((token) =>
+            renderToken(token),
+          )}
+        </div>,
+      );
+      translationIndex += 1;
+    }
+  }
+  headingsByLine[arabicLines.length]?.forEach((heading) =>
+    output.push(renderSuraHeading(heading)),
+  );
+
+  return (
+    <>
+      <div
+        ref={arabicMeasureRef}
+        className="quran-text quran-line-measure"
+        style={fontStyle}
+        aria-hidden="true"
+      >
+        {streams.arabicItems.map((item) => {
+          if (item.kind === "heading") {
+            return renderSuraHeading(item);
+          }
+          if (item.kind === "basmala") {
+            return (
+              <div className="basmala-row" key={item.key}>
+                <span className="basmala" lang="ar" dir="rtl">
+                  {item.tokens.map((token) => renderToken(token, true))}
+                </span>
+              </div>
+            );
+          }
+          return renderToken(item.token, true);
+        })}
+      </div>
+      <div
+        ref={translationMeasureRef}
+        className="quran-text quran-line-measure translation-stream-measure"
+        aria-hidden="true"
+      >
+        {streams.translationTokens.map((token) => renderToken(token, true))}
+      </div>
+      <div className="quran-text" style={fontStyle}>
+        {lineMaps && output}
+      </div>
+    </>
   );
 }
 
@@ -640,90 +1209,17 @@ function App() {
 
               <div className="quran-frame quran-frame-top" aria-hidden="true" />
               <div className="quran-frame quran-frame-middle">
-                <div
-                  className="quran-text"
-                  style={{ "--arabic-scale": fontScale }}
-                >
-                  {reader.verses.map((verse) => {
-                    const active =
-                      verse.sura === location.sura &&
-                      verse.aya === location.aya;
-                    const verseSura = suras.find(
-                      (sura) => sura.number === verse.sura,
-                    );
-                    return (
-                      <Fragment key={`${verse.sura}:${verse.aya}`}>
-                        {(verse.aya === 0 ||
-                          (verse.aya === 1 &&
-                            (verse.sura === 1 || verse.sura === 9))) && (
-                          <div
-                            className="sura-heading-frame"
-                            lang="ar"
-                            dir="rtl"
-                          >
-                            <span>
-                              سورة{" "}
-                              {verseSura?.arabicName ||
-                                arabicNumber(verse.sura)}
-                            </span>
-                          </div>
-                        )}
-                        {verse.aya === 0 ? (
-                          <span className="basmala" lang="ar" dir="rtl">
-                            <QuranText
-                              text={verse.text}
-                              showSigns={showSigns}
-                            />
-                          </span>
-                        ) : (
-                          <span
-                            className={`aya ${active ? "aya-selected" : ""}`}
-                            id={`verse-${verse.sura}-${verse.aya}`}
-                            lang="ar"
-                            dir="rtl"
-                            role="button"
-                            tabIndex={0}
-                            onClick={() => navigate(verse.sura, verse.aya)}
-                            onKeyDown={(event) =>
-                              navigateOnKeyDown(event, verse.sura, verse.aya)
-                            }
-                          >
-                            {" "}
-                            <QuranText
-                              text={verse.text}
-                              showSigns={showSigns}
-                              isJuzStart={juzStarts.some(
-                                (start) =>
-                                  start.startSura === verse.sura &&
-                                  start.startAya === verse.aya,
-                              )}
-                            />{" "}
-                            <span className="ayaNumber" aria-hidden="true">
-                              {formatAyaNumber(verse.aya)}
-                            </span>
-                          </span>
-                        )}
-                      </Fragment>
-                    );
-                  })}
-                </div>
-                {showTranslation && (
-                  <div className="translation-list" lang="fa" dir="rtl">
-                    {reader.verses
-                      .filter((verse) => verse.translation)
-                      .map((verse) => (
-                        <p
-                          className="translation"
-                          key={`translation-${verse.sura}:${verse.aya}`}
-                        >
-                          <span className="translation-reference" dir="ltr">
-                            {verse.sura}:{verse.aya}
-                          </span>
-                          {verse.translation}
-                        </p>
-                      ))}
-                  </div>
-                )}
+                <QuranLines
+                  verses={reader.verses}
+                  suras={suras}
+                  showTranslation={showTranslation}
+                  showSigns={showSigns}
+                  juzStarts={juzStarts}
+                  fontScale={fontScale}
+                  location={location}
+                  navigate={navigate}
+                  navigateOnKeyDown={navigateOnKeyDown}
+                />
               </div>
               <div
                 className="quran-frame quran-frame-bottom"
