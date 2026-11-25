@@ -51,12 +51,23 @@ function splitFormattedText(parts) {
 
   for (const part of parts) {
     if (typeof part !== "string") {
-      tokens.push({
-        leading: pendingWhitespace,
-        text: part.text,
-        className: part.className,
-        trailing: "",
-      });
+      if (part.className === "sign" && tokens.length) {
+        const previousToken = tokens[tokens.length - 1];
+        previousToken.trailingSigns = [
+          ...(previousToken.trailingSigns || []),
+          {
+            className: part.className,
+            text: `${pendingWhitespace}${part.text}`,
+          },
+        ];
+      } else {
+        tokens.push({
+          leading: pendingWhitespace,
+          text: part.text,
+          className: part.className,
+          trailing: "",
+        });
+      }
       pendingWhitespace = "";
       continue;
     }
@@ -189,12 +200,24 @@ function renderToken(token, measure = false) {
   return (
     <Fragment key={token.index}>
       <span
-        className={[token.className, token.endingMarker && "aya-end-token"]
+        className={[
+          token.className,
+          token.trailingSigns?.length && "sign-attached",
+          token.endingMarker && "aya-end-token",
+        ]
           .filter(Boolean)
           .join(" ")}
         data-quran-token={measure ? token.index : undefined}
       >
         {`${token.leading}${token.text}${token.trailing}`}
+        {token.trailingSigns?.map((sign, index) => (
+          <span
+            className={sign.className}
+            key={`token-sign-${token.index}-${index}`}
+          >
+            {sign.text}
+          </span>
+        ))}
         {token.endingMarker && (
           <span className="ayaNumber" aria-hidden="true">
             {" "}

@@ -421,6 +421,9 @@ button {
 .hezb-sign {
   white-space: nowrap;
 }
+.sign-attached {
+  white-space: nowrap;
+}
 .sign {
   color: rgba(251, 118, 0, 1);
   font-size: 0.82em;
