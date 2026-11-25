@@ -458,7 +458,7 @@ button {
   text-align-last: justify;
   white-space: nowrap;
 }
-.arabic-line.last-in-stream,
+.arabic-line.last-in-stream:not(.fixed-justified),
 .translation-line.last-in-stream {
   text-align-last: auto;
 }

@@ -145,7 +145,10 @@ function buildQuranStreams(verses, suras, showSigns, juzStarts) {
     }
     arabicTokens.push(...verseTokens);
 
-    if (verse.aya === 0 && verse.translation) {
+    if (
+      (verse.aya === 0 || (verse.sura === 1 && verse.aya === 1)) &&
+      verse.translation
+    ) {
       basmalaTranslations.push(verse);
     } else if (verse.translation) {
       const textTokens = splitFormattedText([verse.translation.trimEnd()]);
@@ -250,6 +253,320 @@ function measureTokenLines(node, tokens) {
   return lineMap;
 }
 
+const FIXED_ARABIC_LINE_COUNT = 15;
+const OPENING_PAGE_ARABIC_LINE_COUNT = 5;
+const TATWEEL_JOINING_LETTERS = new Set(
+  "\u0628\u062a\u062b\u062c\u062d\u062e\u0633\u0634\u0635\u0636\u0637\u0638\u0639\u063a\u0641\u0642\u0643\u0644\u0645\u0646\u0647\u064a\u0626",
+);
+
+function measureArabicTokenWidths(node, tokens) {
+  if (!node) {
+    return { widths: [], contentWidth: 0, tatweelWidth: 0 };
+  }
+
+  const tokenNodes = new Map(
+    Array.from(node.querySelectorAll("[data-quran-token]"), (tokenNode) => [
+      Number(tokenNode.dataset.quranToken),
+      tokenNode,
+    ]),
+  );
+  const widths = [];
+  for (const token of tokens) {
+    const tokenNode = tokenNodes.get(token.index);
+    if (tokenNode) {
+      widths[token.index] = tokenNode.getBoundingClientRect().width;
+    }
+  }
+
+  const style = getComputedStyle(node);
+  const contentWidth =
+    node.clientWidth -
+    Number.parseFloat(style.paddingLeft) -
+    Number.parseFloat(style.paddingRight);
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d");
+  if (context) {
+    context.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+  }
+  const measuredTatweelWidth = context?.measureText("\u0640").width || 0;
+  const fontSize = Number.parseFloat(style.fontSize);
+
+  return {
+    widths,
+    contentWidth,
+    tatweelWidth: measuredTatweelWidth || fontSize * 0.4,
+  };
+}
+
+function tokenWidth(token, widths) {
+  const measuredWidth = widths[token.index];
+  return Number.isFinite(measuredWidth) && measuredWidth > 0
+    ? measuredWidth
+    : Math.max(Array.from(token.text).length, 1);
+}
+
+function splitTokensIntoLines(tokens, lineCount, widths) {
+  if (lineCount < 1 || tokens.length < lineCount) {
+    return null;
+  }
+
+  const lines = Array.from({ length: lineCount }, () => []);
+  let totalWidth = tokens.reduce(
+    (width, token) => width + tokenWidth(token, widths),
+    0,
+  );
+  let lineIndex = 0;
+  let lineWidth = 0;
+  let lineTarget = totalWidth / lineCount;
+
+  for (let index = 0; index < tokens.length; index += 1) {
+    const linesRemaining = lineCount - lineIndex;
+    const tokensRemaining = tokens.length - index;
+    const width = tokenWidth(tokens[index], widths);
+    if (
+      lineIndex < lineCount - 1 &&
+      lines[lineIndex].length > 0 &&
+      (lineWidth + width > lineTarget || tokensRemaining === linesRemaining)
+    ) {
+      lineIndex += 1;
+      lineWidth = 0;
+      lineTarget = totalWidth / (lineCount - lineIndex);
+    }
+
+    lines[lineIndex].push(tokens[index]);
+    lineWidth += width;
+    totalWidth -= width;
+  }
+
+  return lines.every((line) => line.length > 0) ? lines : null;
+}
+
+function buildFixedArabicLineMap(
+  items,
+  widths,
+  contentWidth,
+  lineCount,
+  pageNumber,
+) {
+  const segments = [];
+  let currentTokens = [];
+  let currentKind = "text";
+  const flushTokens = () => {
+    if (currentTokens.length) {
+      segments.push({ kind: currentKind, tokens: currentTokens });
+      currentTokens = [];
+      currentKind = "text";
+    }
+  };
+
+  for (const item of items) {
+    if (item.kind === "heading") {
+      flushTokens();
+    } else if (item.kind === "basmala") {
+      flushTokens();
+      segments.push({ kind: "basmala", tokens: item.tokens });
+    } else if (
+      pageNumber === 1 &&
+      item.token.verse.sura === 1 &&
+      item.token.verse.aya === 1
+    ) {
+      if (currentKind !== "basmala-verse") {
+        flushTokens();
+        currentKind = "basmala-verse";
+      }
+      currentTokens.push(item.token);
+      if (item.token.endingMarker || item.token.isAyaNumber) {
+        flushTokens();
+      }
+    } else {
+      if (currentKind === "basmala-verse") {
+        flushTokens();
+      }
+      currentTokens.push(item.token);
+    }
+  }
+  flushTokens();
+
+  const reservedLineCount = segments.filter(
+    (segment) =>
+      segment.kind === "basmala" || segment.kind === "basmala-verse",
+  ).length;
+  const textSegments = segments.filter((segment) => segment.kind === "text");
+  const availableTextLines = lineCount - reservedLineCount;
+  if (
+    availableTextLines < textSegments.length ||
+    (textSegments.length === 0 && availableTextLines > 0)
+  ) {
+    return null;
+  }
+
+  const textWidth = textSegments.reduce(
+    (total, segment) =>
+      total +
+      segment.tokens.reduce(
+        (width, token) => width + tokenWidth(token, widths),
+        0,
+      ),
+    0,
+  );
+  if (contentWidth <= 0 || textWidth > contentWidth * availableTextLines) {
+    return null;
+  }
+
+  const lineCounts = segments.map((segment) =>
+    segment.kind === "text" ? 1 : 0,
+  );
+  let remainingLines =
+    availableTextLines -
+    lineCounts.reduce((total, count) => total + count, 0);
+  while (remainingLines > 0) {
+    let bestIndex = -1;
+    let bestWidthPerLine = -1;
+    for (let index = 0; index < segments.length; index += 1) {
+      const segment = segments[index];
+      if (
+        segment.kind !== "text" ||
+        lineCounts[index] >= segment.tokens.length
+      ) {
+        continue;
+      }
+      const segmentWidth = segment.tokens.reduce(
+        (width, token) => width + tokenWidth(token, widths),
+        0,
+      );
+      const widthPerLine = segmentWidth / lineCounts[index];
+      if (widthPerLine > bestWidthPerLine) {
+        bestIndex = index;
+        bestWidthPerLine = widthPerLine;
+      }
+    }
+    if (bestIndex < 0) {
+      return null;
+    }
+    lineCounts[bestIndex] += 1;
+    remainingLines -= 1;
+  }
+
+  const lineMap = [];
+  let lineIndex = 0;
+  for (let index = 0; index < segments.length; index += 1) {
+    const segment = segments[index];
+    if (segment.kind !== "text") {
+      for (const token of segment.tokens) {
+        lineMap[token.index] = lineIndex;
+      }
+      lineIndex += 1;
+      continue;
+    }
+
+    const lines = splitTokensIntoLines(
+      segment.tokens,
+      lineCounts[index],
+      widths,
+    );
+    if (!lines) {
+      return null;
+    }
+    for (const line of lines) {
+      for (const token of line) {
+        lineMap[token.index] = lineIndex;
+      }
+      lineIndex += 1;
+    }
+  }
+
+  return lineIndex === lineCount ? lineMap : null;
+}
+
+function tatweelInsertionPoints(text) {
+  const characters = Array.from(text);
+  const points = [];
+  for (let index = 0; index < characters.length; index += 1) {
+    if (!TATWEEL_JOINING_LETTERS.has(characters[index])) {
+      continue;
+    }
+    let nextIndex = index + 1;
+    while (
+      nextIndex < characters.length &&
+      /\p{M}/u.test(characters[nextIndex])
+    ) {
+      nextIndex += 1;
+    }
+    if (
+      nextIndex < characters.length &&
+      /\p{Script=Arabic}/u.test(characters[nextIndex])
+    ) {
+      points.push(nextIndex);
+    }
+  }
+  return points;
+}
+
+function insertTatweel(text, insertions) {
+  const characters = Array.from(text);
+  let output = "";
+  for (let index = 0; index <= characters.length; index += 1) {
+    output += "\u0640".repeat(insertions.get(index) || 0);
+    if (index < characters.length) {
+      output += characters[index];
+    }
+  }
+  return output;
+}
+
+function addLineTatweel(tokens, widths, contentWidth, tatweelWidth) {
+  const arabicWordCount = tokens.filter((token) =>
+    /\p{Script=Arabic}/u.test(token.text),
+  ).length;
+  if (arabicWordCount < 2 || tatweelWidth <= 0) {
+    return tokens;
+  }
+
+  const naturalWidth = tokens.reduce(
+    (width, token) => width + tokenWidth(token, widths),
+    0,
+  );
+  const gap = contentWidth - naturalWidth;
+  if (gap < tatweelWidth * 2) {
+    return tokens;
+  }
+
+  const candidates = tokens.flatMap((token) =>
+    tatweelInsertionPoints(token.text).map((position) => ({
+      tokenIndex: token.index,
+      position,
+    })),
+  );
+  if (!candidates.length) {
+    return tokens;
+  }
+
+  const insertionCount = Math.min(
+    candidates.length * 2,
+    Math.floor((gap * 0.75) / tatweelWidth),
+  );
+  const insertionsByToken = new Map();
+  for (let index = 0; index < insertionCount; index += 1) {
+    const candidate = candidates[index % candidates.length];
+    let insertions = insertionsByToken.get(candidate.tokenIndex);
+    if (!insertions) {
+      insertions = new Map();
+      insertionsByToken.set(candidate.tokenIndex, insertions);
+    }
+    insertions.set(
+      candidate.position,
+      (insertions.get(candidate.position) || 0) + 1,
+    );
+  }
+
+  return tokens.map((token) => {
+    const insertions = insertionsByToken.get(token.index);
+    return insertions
+      ? { ...token, text: insertTatweel(token.text, insertions) }
+      : token;
+  });
+}
+
 function QuranLines({
   verses,
   suras,
@@ -257,6 +574,7 @@ function QuranLines({
   showSigns,
   juzStarts,
   fontScale,
+  pageNumber,
   location,
   playingTranslation,
   navigate,
@@ -271,37 +589,79 @@ function QuranLines({
   );
   const fontStyle = { "--arabic-scale": fontScale };
   const [hoveredVerse, setHoveredVerse] = useState(null);
+  const [isDesktopViewport, setIsDesktopViewport] = useState(
+    () => window.innerWidth > 820,
+  );
+
+  useEffect(() => {
+    const updateViewport = () =>
+      setIsDesktopViewport(window.innerWidth > 820);
+    window.addEventListener("resize", updateViewport);
+    return () => window.removeEventListener("resize", updateViewport);
+  }, []);
 
   useLayoutEffect(() => {
-    if (!showTranslation) {
-      setLineMaps(null);
-      return undefined;
-    }
-
     let active = true;
     const measureLines = () => {
       if (!active) {
         return;
       }
+      const fixedDesktopPage = isDesktopViewport && pageNumber >= 1;
+      const fixedArabicLineCount =
+        pageNumber > 2
+          ? FIXED_ARABIC_LINE_COUNT
+          : OPENING_PAGE_ARABIC_LINE_COUNT;
+      const arabicMeasurements = fixedDesktopPage
+        ? measureArabicTokenWidths(
+            arabicMeasureRef.current,
+            streams.arabicTokens,
+          )
+        : null;
+      const fixedArabicLineMap = arabicMeasurements
+        ? buildFixedArabicLineMap(
+            streams.arabicItems,
+            arabicMeasurements.widths,
+            arabicMeasurements.contentWidth,
+            fixedArabicLineCount,
+            pageNumber,
+          )
+        : null;
       const nextLineMaps = {
-        arabic: measureTokenLines(
-          arabicMeasureRef.current,
-          streams.arabicTokens,
-        ),
-        translation: measureTokenLines(
-          translationMeasureRef.current,
-          streams.translationTokens,
-        ),
+        arabic:
+          fixedArabicLineMap ||
+          measureTokenLines(arabicMeasureRef.current, streams.arabicTokens),
+        translation: showTranslation
+          ? measureTokenLines(
+              translationMeasureRef.current,
+              streams.translationTokens,
+            )
+          : [],
+        fixedArabic: Boolean(fixedArabicLineMap),
+        arabicTokenWidths: arabicMeasurements?.widths || [],
+        arabicContentWidth: arabicMeasurements?.contentWidth || 0,
+        tatweelWidth: arabicMeasurements?.tatweelWidth || 0,
       };
 
       setLineMaps((current) => {
         const sameMap = (left, right) =>
           left.length === right.length &&
           left.every((value, index) => value === right[index]);
+        const sameWidths = (left, right) =>
+          left.length === right.length &&
+          left.every((value, index) => Math.abs(value - right[index]) < 0.1);
         if (
           current &&
           sameMap(current.arabic, nextLineMaps.arabic) &&
-          sameMap(current.translation, nextLineMaps.translation)
+          sameMap(current.translation, nextLineMaps.translation) &&
+          current.fixedArabic === nextLineMaps.fixedArabic &&
+          sameWidths(
+            current.arabicTokenWidths,
+            nextLineMaps.arabicTokenWidths,
+          ) &&
+          Math.abs(
+            current.arabicContentWidth - nextLineMaps.arabicContentWidth,
+          ) < 0.1 &&
+          Math.abs(current.tatweelWidth - nextLineMaps.tatweelWidth) < 0.1
         ) {
           return current;
         }
@@ -311,10 +671,11 @@ function QuranLines({
 
     measureLines();
     const observer = new ResizeObserver(measureLines);
-    for (const node of [
+    const observedNodes = [
       arabicMeasureRef.current,
-      translationMeasureRef.current,
-    ]) {
+      showTranslation ? translationMeasureRef.current : null,
+    ];
+    for (const node of observedNodes) {
       if (node) {
         observer.observe(node);
       }
@@ -330,7 +691,7 @@ function QuranLines({
       observer.disconnect();
       window.removeEventListener("resize", measureLines);
     };
-  }, [streams, showTranslation, fontScale]);
+  }, [streams, showTranslation, fontScale, pageNumber, isDesktopViewport]);
 
   const seenVerses = new Set();
   const renderAyaFragment = (tokens, key) => {
@@ -388,6 +749,27 @@ function QuranLines({
           </div>,
         );
         index += 1;
+      } else if (
+        pageNumber === 1 &&
+        item.token.verse.sura === 1 &&
+        item.token.verse.aya === 1
+      ) {
+        const tokens = [];
+        while (
+          index < streams.arabicItems.length &&
+          streams.arabicItems[index].kind === "token" &&
+          streams.arabicItems[index].token.verse === item.token.verse
+        ) {
+          tokens.push(streams.arabicItems[index].token);
+          index += 1;
+        }
+        output.push(
+          <div className="basmala-row" key="basmala-verse-1">
+            <span className="basmala" lang="ar" dir="rtl">
+              {renderAyaFragment(tokens, "basmala-verse-1")}
+            </span>
+          </div>,
+        );
       } else {
         const tokens = [];
         while (
@@ -409,7 +791,8 @@ function QuranLines({
     return output;
   };
 
-  if (!showTranslation) {
+  const isFixedDesktopPage = isDesktopViewport && pageNumber >= 1;
+  if (!showTranslation && !isFixedDesktopPage) {
     return (
       <div className="quran-text" style={fontStyle}>
         {renderContinuousArabic()}
@@ -429,7 +812,7 @@ function QuranLines({
   };
   const flushArabicLine = () => {
     if (currentArabicLine) {
-      addArabicLine(currentArabicLine.tokens);
+      addArabicLine(currentArabicLine.tokens, currentArabicLine.kind);
       currentArabicLine = null;
     }
   };
@@ -441,13 +824,36 @@ function QuranLines({
     } else if (item.kind === "basmala") {
       flushArabicLine();
       addArabicLine(item.tokens, "basmala");
+    } else if (
+      pageNumber === 1 &&
+      item.token.verse.sura === 1 &&
+      item.token.verse.aya === 1
+    ) {
+      if (currentArabicLine && currentArabicLine.kind !== "basmala-verse") {
+        flushArabicLine();
+      }
+      if (!currentArabicLine) {
+        currentArabicLine = {
+          line: "basmala-verse",
+          tokens: [],
+          kind: "basmala-verse",
+        };
+      }
+      currentArabicLine.tokens.push(item.token);
+      if (item.token.endingMarker || item.token.isAyaNumber) {
+        flushArabicLine();
+      }
     } else {
       const line = lineMaps?.arabic[item.token.index] ?? 0;
       if (currentArabicLine && currentArabicLine.line !== line) {
         flushArabicLine();
       }
       if (!currentArabicLine) {
-        currentArabicLine = { line, tokens: [] };
+        currentArabicLine = {
+          line,
+          tokens: [],
+          kind: "arabic",
+        };
       }
       currentArabicLine.tokens.push(item.token);
     }
@@ -458,14 +864,16 @@ function QuranLines({
   }
 
   const translationLines = [];
-  for (const token of streams.translationTokens) {
-    const line = lineMaps?.translation[token.index] ?? 0;
-    let current = translationLines[translationLines.length - 1];
-    if (!current || current.line !== line) {
-      current = { line, tokens: [] };
-      translationLines.push(current);
+  if (showTranslation) {
+    for (const token of streams.translationTokens) {
+      const line = lineMaps?.translation[token.index] ?? 0;
+      let current = translationLines[translationLines.length - 1];
+      if (!current || current.line !== line) {
+        current = { line, tokens: [] };
+        translationLines.push(current);
+      }
+      current.tokens.push(token);
     }
-    current.tokens.push(token);
   }
 
   const renderTranslationLine = (line, index) => {
@@ -519,9 +927,33 @@ function QuranLines({
         </div>
       );
     }
+    if (line.kind === "basmala-verse") {
+      return (
+        <div
+          className="arabic-line basmala-line"
+          key={`arabic-line-${index}`}
+        >
+          <span className="basmala" lang="ar" dir="rtl">
+            {renderAyaFragment(
+              line.tokens,
+              `basmala-verse-${line.tokens[0].verse.sura}:${line.tokens[0].verse.aya}`,
+            )}
+          </span>
+        </div>
+      );
+    }
 
+    const displayTokens =
+      lineMaps?.fixedArabic && line.kind === "arabic"
+        ? addLineTatweel(
+            line.tokens,
+            lineMaps.arabicTokenWidths,
+            lineMaps.arabicContentWidth,
+            lineMaps.tatweelWidth,
+          )
+        : line.tokens;
     const verseGroups = [];
-    for (const token of line.tokens) {
+    for (const token of displayTokens) {
       const current = verseGroups[verseGroups.length - 1];
       if (!current || current.verse !== token.verse) {
         verseGroups.push({ verse: token.verse, tokens: [token] });
@@ -531,7 +963,9 @@ function QuranLines({
     }
     return (
       <div
-        className={`arabic-line ${isLastLine ? "last-in-stream" : ""}`}
+        className={`arabic-line ${
+          lineMaps?.fixedArabic ? "fixed-justified" : ""
+        } ${isLastLine ? "last-in-stream" : ""}`}
         key={`arabic-line-${index}`}
       >
         {verseGroups.map((verseGroup, verseIndex) =>
@@ -564,19 +998,30 @@ function QuranLines({
         ),
       );
 
-      if (arabicLine.kind === "basmala") {
+      if (
+        arabicLine.kind === "basmala" ||
+        arabicLine.kind === "basmala-verse"
+      ) {
         const basmalaTranslation = streams.basmalaTranslations.find(
-          (verse) => verse.sura === arabicLine.tokens[0].verse.sura,
+          (verse) =>
+            verse.sura === arabicLine.tokens[0].verse.sura &&
+            verse.aya === arabicLine.tokens[0].verse.aya,
         );
-        if (basmalaTranslation) {
+        if (showTranslation && basmalaTranslation) {
           output.push(
             <div
               className="translation-basmala"
               lang="fa"
               dir="rtl"
-              key={`translation-basmala-${basmalaTranslation.sura}`}
+              key={`translation-basmala-${basmalaTranslation.sura}:${basmalaTranslation.aya}`}
             >
-              {basmalaTranslation.translation}
+              {basmalaTranslation.translation.trimEnd()}
+              {arabicLine.kind === "basmala-verse" && (
+                <span className="translation-aya-number">
+                  {"\u00a0"}
+                  {formatAyaNumber(basmalaTranslation.aya)}
+                </span>
+              )}
             </div>,
           );
         }
@@ -633,7 +1078,8 @@ function QuranLines({
         className="quran-text quran-line-measure translation-stream-measure"
         aria-hidden="true"
       >
-        {streams.translationTokens.map((token) => renderToken(token, true))}
+        {showTranslation &&
+          streams.translationTokens.map((token) => renderToken(token, true))}
       </div>
       <div className="quran-text" style={fontStyle}>
         {lineMaps && output}
@@ -1233,6 +1679,7 @@ function App() {
                   showSigns={showSigns}
                   juzStarts={juzStarts}
                   fontScale={fontScale}
+                  pageNumber={reader.page.number}
                   location={location}
                   playingTranslation={
                     audioTrack === "translation" && isPlaying ? location : null
