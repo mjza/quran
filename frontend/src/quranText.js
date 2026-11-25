@@ -13,7 +13,7 @@ function normalizeHafsText(text) {
     .replace(/(\u064D\u0651?)\u06E2/g, '$1');
 }
 
-export function formatQuranText(text, { showSigns = true } = {}) {
+export function formatQuranText(text, { showSigns = true, isJuzStart = false } = {}) {
   const cleanedText = normalizeHafsText(text);
   if (!showSigns) {
     return [cleanedText.replace(/[\u06D6-\u06DE\u06E9]/gu, '')];
@@ -33,7 +33,7 @@ export function formatQuranText(text, { showSigns = true } = {}) {
       parts.push({ className: 'sign', text: `\u00A0${match[1]}` });
     } else {
       parts.push({
-        className: match[2] ? 'juz-sign' : 'internal-sign',
+        className: match[2] ? (isJuzStart ? 'juz-sign' : 'hezb-sign') : 'internal-sign',
         text: match[2] ? `${match[2]} ` : match[3],
       });
     }

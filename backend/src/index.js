@@ -3,7 +3,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
 import express from "express";
-import { getJuzNumber, PAGE_STARTS, SURA_METADATA } from "./data.js";
+import {
+  getJuzNumber,
+  JUZ_STARTS,
+  PAGE_STARTS,
+  RUB_EL_HIZB_STARTS,
+  SURA_METADATA,
+} from "./data.js";
 
 const backendDirectory = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -198,6 +204,28 @@ app.get("/api/suras", (_request, response) => {
       }
       return metadata;
     }),
+  );
+});
+
+app.get("/api/juz", (_request, response) => {
+  response.json(
+    JUZ_STARTS.map(({ sura, aya }, index) => ({
+      number: index + 1,
+      startSura: sura,
+      startAya: aya,
+    })),
+  );
+});
+
+app.get("/api/hezb", (_request, response) => {
+  response.json(
+    RUB_EL_HIZB_STARTS.map(({ sura, aya }, index) => ({
+      number: index + 1,
+      hizb: Math.floor(index / 4) + 1,
+      quarter: index % 4,
+      startSura: sura,
+      startAya: aya,
+    })),
   );
 });
 

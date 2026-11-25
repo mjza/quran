@@ -412,16 +412,22 @@ button {
 }
 .sign,
 .internal-sign,
-.juz-sign {
+.juz-sign,
+.hezb-sign {
   white-space: nowrap;
 }
 .sign {
   color: rgba(251, 118, 0, 1);
   font-size: 0.82em;
 }
-.internal-sign,
 .juz-sign {
   color: rgba(0, 85, 0, 0.75);
+}
+.internal-sign {
+  color: rgba(0, 85, 0, 0.75);
+}
+.hezb-sign {
+  color: rgba(0, 85, 255, 0.8);
 }
 
 .basmala {

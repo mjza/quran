@@ -19,6 +19,7 @@ excludes `data/`; keep the database and audio files in those local paths.
 
 ```powershell
 npm install
+npm run build
 npm run dev
 ```
 
@@ -36,6 +37,8 @@ fonts, or page data from the internet.
 
 - `GET /api/health`
 - `GET /api/suras`
+- `GET /api/juz`
+- `GET /api/hezb`
 - `GET /api/pages/:page`
 - `GET /api/reader?sura=112&aya=1&edition=quran_text_uthmani`
 - `GET /api/reciters`
