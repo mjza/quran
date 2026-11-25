@@ -480,12 +480,15 @@ button {
   text-align-last: justify;
   white-space: nowrap;
 }
+.translation-playing {
+  background-color: #dbeafe;
+  border-radius: 3px;
+}
 .translation-basmala {
   margin: 0 0 4px;
   text-align: center;
 }
 .translation-aya-number {
-  margin-inline-start: 6px;
   color: #789078;
   font-size: 10px;
   white-space: nowrap;
@@ -535,7 +538,8 @@ button {
 }
 
 .audio-player {
-  margin-top: 17px;
+  width: min(100%, 620px);
+  margin: 17px auto 0;
   padding: 13px 17px;
   display: flex;
   justify-content: space-between;

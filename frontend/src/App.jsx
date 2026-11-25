@@ -103,8 +103,7 @@ function buildQuranStreams(verses, suras, showSigns, juzStarts) {
     }
 
     const isJuzStart = juzStarts.some(
-      (start) =>
-        start.startSura === verse.sura && start.startAya === verse.aya,
+      (start) => start.startSura === verse.sura && start.startAya === verse.aya,
     );
     const verseTokens = splitFormattedText(
       formatQuranText(verse.text, { showSigns, isJuzStart }),
@@ -149,7 +148,7 @@ function buildQuranStreams(verses, suras, showSigns, juzStarts) {
     if (verse.aya === 0 && verse.translation) {
       basmalaTranslations.push(verse);
     } else if (verse.translation) {
-      const textTokens = splitFormattedText([verse.translation]);
+      const textTokens = splitFormattedText([verse.translation.trimEnd()]);
       if (hasTranslation && textTokens.length) {
         textTokens[0].leading = ` ${textTokens[0].leading}`;
       }
@@ -186,10 +185,7 @@ function renderToken(token, measure = false) {
   return (
     <Fragment key={token.index}>
       <span
-        className={[
-          token.className,
-          token.endingMarker && "aya-end-token",
-        ]
+        className={[token.className, token.endingMarker && "aya-end-token"]
           .filter(Boolean)
           .join(" ")}
         data-quran-token={measure ? token.index : undefined}
@@ -262,6 +258,7 @@ function QuranLines({
   juzStarts,
   fontScale,
   location,
+  playingTranslation,
   navigate,
   navigateOnKeyDown,
 }) {
@@ -341,8 +338,7 @@ function QuranLines({
     const verseKey = `${verse.sura}:${verse.aya}`;
     const isFirstFragment = !seenVerses.has(verseKey);
     seenVerses.add(verseKey);
-    const active =
-      verse.sura === location.sura && verse.aya === location.aya;
+    const active = verse.sura === location.sura && verse.aya === location.aya;
     const hovered = hoveredVerse === verseKey;
 
     return (
@@ -472,6 +468,47 @@ function QuranLines({
     current.tokens.push(token);
   }
 
+  const renderTranslationLine = (line, index) => {
+    const verseGroups = [];
+    for (const token of line.tokens) {
+      const current = verseGroups[verseGroups.length - 1];
+      if (
+        !current ||
+        current.verse.sura !== token.verse.sura ||
+        current.verse.aya !== token.verse.aya
+      ) {
+        verseGroups.push({ verse: token.verse, tokens: [token] });
+      } else {
+        current.tokens.push(token);
+      }
+    }
+
+    return (
+      <div
+        className={`translation-line ${
+          index === translationLines.length - 1 ? "last-in-stream" : ""
+        }`}
+        lang="fa"
+        dir="rtl"
+        key={`translation-line-${index}`}
+      >
+        {verseGroups.map((group, groupIndex) => {
+          const isPlaying =
+            playingTranslation?.sura === group.verse.sura &&
+            playingTranslation?.aya === group.verse.aya;
+          return (
+            <span
+              className={isPlaying ? "translation-playing" : undefined}
+              key={`translation-aya-${index}-${groupIndex}`}
+            >
+              {group.tokens.map((token) => renderToken(token))}
+            </span>
+          );
+        })}
+      </div>
+    );
+  };
+
   const renderMeasuredArabicLine = (line, index, isLastLine) => {
     if (line.kind === "basmala") {
       return (
@@ -545,40 +582,20 @@ function QuranLines({
         }
       } else if (translationIndex < translationLines.length) {
         output.push(
-          <div
-            className={`translation-line ${
-              translationIndex === translationLines.length - 1
-                ? "last-in-stream"
-                : ""
-            }`}
-            lang="fa"
-            dir="rtl"
-            key={`translation-line-${translationIndex}`}
-          >
-            {translationLines[translationIndex].tokens.map((token) =>
-              renderToken(token),
-            )}
-          </div>,
+          renderTranslationLine(
+            translationLines[translationIndex],
+            translationIndex,
+          ),
         );
         translationIndex += 1;
       }
       arabicIndex += 1;
     } else {
       output.push(
-        <div
-          className={`translation-line ${
-            translationIndex === translationLines.length - 1
-              ? "last-in-stream"
-              : ""
-          }`}
-          lang="fa"
-          dir="rtl"
-          key={`translation-line-${translationIndex}`}
-        >
-          {translationLines[translationIndex].tokens.map((token) =>
-            renderToken(token),
-          )}
-        </div>,
+        renderTranslationLine(
+          translationLines[translationIndex],
+          translationIndex,
+        ),
       );
       translationIndex += 1;
     }
@@ -1217,6 +1234,9 @@ function App() {
                   juzStarts={juzStarts}
                   fontScale={fontScale}
                   location={location}
+                  playingTranslation={
+                    audioTrack === "translation" && isPlaying ? location : null
+                  }
                   navigate={navigate}
                   navigateOnKeyDown={navigateOnKeyDown}
                 />
