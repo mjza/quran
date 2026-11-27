@@ -2106,7 +2106,8 @@ function App() {
                       ? `سورة ${currentSura.arabicName}`
                       : `سورة ${arabicNumber(location.sura)}`}
                     {currentSura?.revelationType &&
-                      ` · ${currentSura.revelationType == "Meccan" ? "مكية" : "مدنية"}`}
+                      ` (${currentSura.revelationType == "Meccan" ? "مكية" : "مدنية"}`}
+                    )
                   </strong>
                 </div>
                 <div className="quran-page-navigation" dir="ltr">
@@ -2172,7 +2173,10 @@ function App() {
                   </button>
                 </div>
                 <div className="quran-juz-name" dir="rtl">
-                  <strong>جزء {arabicNumberName(reader.current.juz)}</strong>
+                  <strong>
+                    جزء {arabicNumberName(reader.current.juz)}
+                    &nbsp;({arabicNumber(reader.current.juz)})
+                  </strong>
                 </div>
               </div>
               <div
@@ -2221,9 +2225,7 @@ function App() {
                 <button
                   type="button"
                   onClick={() => changePage(-1)}
-                  disabled={
-                    isPageNavigationLoading || reader.page.number === 1
-                  }
+                  disabled={isPageNavigationLoading || reader.page.number === 1}
                   aria-label="Previous page"
                 >
                   ►
