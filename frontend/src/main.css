@@ -277,26 +277,57 @@ button {
 }
 .quran-page-header {
   min-height: 66px;
+  padding-bottom: 0px;
+}
+.page-navigation-progress {
+  height: 3px;
+  background: #f4f1e4;
   border-bottom: 1px solid #e0dac5;
+  overflow: hidden;
+}
+.page-navigation-progress.is-loading {
+  background: #dfe8df;
+}
+.page-navigation-progress::after {
+  display: block;
+  width: 32%;
+  height: 100%;
+  background: #315440;
+  content: "";
+  animation: page-navigation-progress 1.1s ease-in-out infinite;
+  animation-play-state: paused;
+  visibility: hidden;
+}
+.page-navigation-progress.is-loading::after {
+  animation-play-state: running;
+  visibility: visible;
+}
+@keyframes page-navigation-progress {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(320%);
+  }
 }
 .quran-sura-name,
-.quran-edition-name {
+.quran-juz-name {
   display: flex;
   flex-direction: column;
   gap: 4px;
   text-align: left;
 }
-.quran-edition-name {
+.quran-juz-name {
   text-align: right;
 }
 .quran-sura-name strong,
-.quran-edition-name strong {
+.quran-juz-name strong {
   color: #315440;
   font-family: hafs, "Times New Roman", serif;
   font-size: 18px;
 }
 .quran-sura-name small,
-.quran-edition-name small {
+.quran-juz-name small {
   color: #858273;
   font-family: "Segoe UI", Tahoma, sans-serif;
   font-size: 10px;
@@ -653,6 +684,12 @@ button {
     font-size: calc(22px * var(--arabic-scale));
   }
 }
+@media (prefers-reduced-motion: reduce) {
+  .page-navigation-progress::after {
+    width: 100%;
+    animation: none;
+  }
+}
 
 @media (max-width: 480px) {
   .topbar {
@@ -673,11 +710,11 @@ button {
     gap: 3px;
   }
   .quran-sura-name strong,
-  .quran-edition-name strong {
+  .quran-juz-name strong {
     font-size: 15px;
   }
   .quran-sura-name small,
-  .quran-edition-name small {
+  .quran-juz-name small {
     font-size: 9px;
   }
   .quran-page-navigation {

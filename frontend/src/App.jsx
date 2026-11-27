@@ -23,6 +23,7 @@ const HEZB_PORTION_LABELS = [
   "Hezb {{hezb}} \u00BD",
   "Hezb {{hezb}} \u00BE",
 ];
+const PAGE_NAVIGATION_CLICK_COOLDOWN_MS = 500;
 
 function hasBasmalaAya(sura) {
   return sura !== 1 && sura !== 9;
@@ -30,6 +31,40 @@ function hasBasmalaAya(sura) {
 
 function arabicNumber(value) {
   return String(value).replace(/\d/g, (digit) => "٠١٢٣٤٥٦٧٨٩"[digit]);
+}
+
+function normalizeArabicDigits(value) {
+  return String(value).replace(/[٠-٩۰-۹]/g, (digit) => {
+    const digitCode = digit.charCodeAt(0);
+    return String(digitCode - (digitCode >= 0x06f0 ? 0x06f0 : 0x0660));
+  });
+}
+
+function arabicNumberName(value) {
+  const ordinalNames = [
+    "الاول",
+    "الثاني",
+    "الثالث",
+    "الرابع",
+    "الخامس",
+    "السادس",
+    "السابع",
+    "الثامن",
+    "التاسع",
+    "العاشر",
+  ];
+  const tensNames = ["عشر", "العشرون", "الثلاثون"];
+  if (value < 1 || value >= 40) return "";
+  if (value <= 10) return ordinalNames[value - 1];
+
+  const remainder = value % 10;
+  const tens = parseInt(value / 10);
+  ordinalNames[0] = "الحادي";
+  return (
+    (remainder > 0
+      ? ordinalNames[remainder - 1] + (tens > 1 ? " و" : " ")
+      : "") + tensNames[tens - 1]
+  );
 }
 
 function formatAyaNumber(value) {
@@ -361,7 +396,9 @@ function splitTokensIntoLines(
     Array(tokens.length + 1).fill(-1),
   );
   let previousWidths = Array(tokens.length + 1).fill(Number.POSITIVE_INFINITY);
-  let previousAyaSplits = Array(tokens.length + 1).fill(Number.POSITIVE_INFINITY);
+  let previousAyaSplits = Array(tokens.length + 1).fill(
+    Number.POSITIVE_INFINITY,
+  );
   let previousAyaAlignmentMisses = Array(tokens.length + 1).fill(
     Number.POSITIVE_INFINITY,
   );
@@ -369,8 +406,12 @@ function splitTokensIntoLines(
   previousAyaSplits[0] = 0;
   previousAyaAlignmentMisses[0] = 0;
   for (let linesUsed = 1; linesUsed <= lineCount; linesUsed += 1) {
-    const currentWidths = Array(tokens.length + 1).fill(Number.POSITIVE_INFINITY);
-    const currentAyaSplits = Array(tokens.length + 1).fill(Number.POSITIVE_INFINITY);
+    const currentWidths = Array(tokens.length + 1).fill(
+      Number.POSITIVE_INFINITY,
+    );
+    const currentAyaSplits = Array(tokens.length + 1).fill(
+      Number.POSITIVE_INFINITY,
+    );
     const currentAyaAlignmentMisses = Array(tokens.length + 1).fill(
       Number.POSITIVE_INFINITY,
     );
@@ -405,8 +446,7 @@ function splitTokensIntoLines(
                 (ayaSplits < currentAyaSplits[end] ||
                   (ayaSplits === currentAyaSplits[end] &&
                     maximumWidth < currentWidths[end] - 0.1))))) ||
-          (!preferAyaBoundaries &&
-            maximumWidth < currentWidths[end] - 0.1)
+          (!preferAyaBoundaries && maximumWidth < currentWidths[end] - 0.1)
         ) {
           currentWidths[end] = maximumWidth;
           currentAyaSplits[end] = ayaSplits;
@@ -514,8 +554,7 @@ function buildFixedArabicLineMap(
     segment.kind === "text" ? 1 : 0,
   );
   let remainingLines =
-    availableTextLines -
-    lineCounts.reduce((total, count) => total + count, 0);
+    availableTextLines - lineCounts.reduce((total, count) => total + count, 0);
   while (remainingLines > 0) {
     let bestIndex = -1;
     let bestWidthPerLine = -1;
@@ -746,8 +785,7 @@ function QuranLines({
   );
 
   useEffect(() => {
-    const updateViewport = () =>
-      setIsDesktopViewport(window.innerWidth > 820);
+    const updateViewport = () => setIsDesktopViewport(window.innerWidth > 820);
     window.addEventListener("resize", updateViewport);
     return () => window.removeEventListener("resize", updateViewport);
   }, []);
@@ -764,10 +802,7 @@ function QuranLines({
           ? FIXED_ARABIC_LINE_COUNT
           : OPENING_PAGE_ARABIC_LINE_COUNT;
       const arabicMeasurements = fixedDesktopPage
-        ? measureTokenWidths(
-            arabicMeasureRef.current,
-            streams.arabicTokens,
-          )
+        ? measureTokenWidths(arabicMeasureRef.current, streams.arabicTokens)
         : null;
       const translationMeasurements = showTranslation
         ? measureTokenWidths(
@@ -1105,10 +1140,7 @@ function QuranLines({
         continue;
       }
 
-      if (
-        tokens.length >= arabicLineCount &&
-        measurementsAvailable
-      ) {
+      if (tokens.length >= arabicLineCount && measurementsAvailable) {
         const hasReadableLines = (candidateLines) =>
           candidateLines?.every(
             (line) =>
@@ -1221,10 +1253,7 @@ function QuranLines({
     }
     if (line.kind === "basmala-verse") {
       return (
-        <div
-          className="arabic-line basmala-line"
-          key={`arabic-line-${index}`}
-        >
+        <div className="arabic-line basmala-line" key={`arabic-line-${index}`}>
           <span className="basmala" lang="ar" dir="rtl">
             {renderAyaFragment(
               line.tokens,
@@ -1303,9 +1332,7 @@ function QuranLines({
   for (let index = 0; index < arabicLines.length; index += 1) {
     const line = arabicLines[index];
     const sura =
-      line.kind === "heading"
-        ? line.tokens[0].sura
-        : line.tokens[0].verse.sura;
+      line.kind === "heading" ? line.tokens[0].sura : line.tokens[0].verse.sura;
     let section = arabicSections[arabicSections.length - 1];
     if (!section || section.sura !== sura) {
       section = { sura, lineIndexes: [] };
@@ -1353,7 +1380,6 @@ function QuranLines({
         );
         translationIndex += 1;
       }
-
     }
 
     while (translationIndex < sectionTranslationLines.length) {
@@ -1438,12 +1464,82 @@ function App() {
   const [playTranslation, setPlayTranslation] = useState(false);
   const [fontScale, setFontScale] = useState(1);
   const [pageInput, setPageInput] = useState("1");
+  const [isPageInputFocused, setIsPageInputFocused] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [isPageNavigationLoading, setIsPageNavigationLoading] = useState(false);
   const [error, setError] = useState("");
   const [isPlaying, setIsPlaying] = useState(false);
   const [audioTrack, setAudioTrack] = useState("recitation");
   const [basmalaPlayed, setBasmalaPlayed] = useState(false);
   const audioRef = useRef(null);
+  const pageCacheRef = useRef(new Map());
+  const pageRequestsRef = useRef(new Map());
+  const activePageRef = useRef(null);
+  const pageNavigationRequestRef = useRef(0);
+  const pageNavigationLoadingRef = useRef(false);
+  const pageNavigationLastStartedAtRef = useRef(0);
+  const pageNavigationTargetRef = useRef(null);
+
+  const activateReaderPage = useCallback((data, selectedEdition) => {
+    const pageNumber = data.page.number;
+    activePageRef.current = { edition: selectedEdition, pageNumber };
+
+    for (const [key, cachedPage] of pageCacheRef.current) {
+      if (
+        cachedPage.edition !== selectedEdition ||
+        Math.abs(cachedPage.page.number - pageNumber) > 1
+      ) {
+        pageCacheRef.current.delete(key);
+      }
+    }
+
+    pageCacheRef.current.set(`${selectedEdition}:${pageNumber}`, data);
+  }, []);
+
+  const loadPageData = useCallback((pageNumber, selectedEdition) => {
+    const key = `${selectedEdition}:${pageNumber}`;
+    const cachedPage = pageCacheRef.current.get(key);
+    if (cachedPage) {
+      return Promise.resolve(cachedPage);
+    }
+
+    const existingRequest = pageRequestsRef.current.get(key);
+    if (existingRequest) {
+      return existingRequest;
+    }
+
+    const request = (async () => {
+      const bounds = await requestJson(`/api/pages/${pageNumber}`);
+      const data = await requestJson(
+        `/api/reader?sura=${bounds.startSura}&aya=${bounds.startAya}&edition=${selectedEdition}`,
+      );
+      const readerData = { ...data, edition: selectedEdition };
+      const activePage = activePageRef.current;
+      if (
+        !activePage ||
+        (activePage.edition === selectedEdition &&
+          Math.abs(activePage.pageNumber - pageNumber) <= 1)
+      ) {
+        pageCacheRef.current.set(key, readerData);
+      }
+      return readerData;
+    })();
+
+    pageRequestsRef.current.set(key, request);
+    request.then(
+      () => {
+        if (pageRequestsRef.current.get(key) === request) {
+          pageRequestsRef.current.delete(key);
+        }
+      },
+      () => {
+        if (pageRequestsRef.current.get(key) === request) {
+          pageRequestsRef.current.delete(key);
+        }
+      },
+    );
+    return request;
+  }, []);
 
   const currentSura = useMemo(
     () => suras.find((item) => item.number === location.sura),
@@ -1578,6 +1674,21 @@ function App() {
       return undefined;
     }
 
+    const cachedPage = Array.from(pageCacheRef.current.values()).find(
+      (pageData) =>
+        pageData.edition === edition &&
+        pageData.verses.some(
+          (verse) => verse.sura === location.sura && verse.aya === location.aya,
+        ),
+    );
+    if (cachedPage) {
+      activateReaderPage(cachedPage, edition);
+      setReader(cachedPage);
+      setLoading(false);
+      setError("");
+      return undefined;
+    }
+
     const controller = new AbortController();
     setLoading(true);
     setError("");
@@ -1586,7 +1697,9 @@ function App() {
       controller.signal,
     )
       .then((data) => {
-        setReader({ ...data, edition });
+        const readerData = { ...data, edition };
+        activateReaderPage(readerData, edition);
+        setReader(readerData);
         setLoading(false);
       })
       .catch((requestError) => {
@@ -1596,7 +1709,35 @@ function App() {
         }
       });
     return () => controller.abort();
-  }, [location.sura, location.aya, edition, reader]);
+  }, [location.sura, location.aya, edition, reader, activateReaderPage]);
+
+  useEffect(() => {
+    if (!reader || reader.edition !== edition) {
+      return;
+    }
+
+    for (const pageNumber of [reader.page.number - 1, reader.page.number + 1]) {
+      if (pageNumber < 1 || pageNumber > 604) {
+        continue;
+      }
+      loadPageData(pageNumber, edition).catch((requestError) => {
+        setError(
+          `Could not preload page ${pageNumber}: ${requestError.message}`,
+        );
+      });
+    }
+  }, [reader, edition, loadPageData]);
+
+  useEffect(() => {
+    if (
+      isPageNavigationLoading &&
+      reader?.page.number === pageNavigationTargetRef.current
+    ) {
+      pageNavigationLoadingRef.current = false;
+      pageNavigationTargetRef.current = null;
+      setIsPageNavigationLoading(false);
+    }
+  }, [reader, isPageNavigationLoading]);
 
   useEffect(() => {
     const activeVerse = document.getElementById(
@@ -1612,11 +1753,40 @@ function App() {
   }, [reader]);
 
   const goToPage = async (pageNumber) => {
+    const now = Date.now();
+    if (
+      pageNavigationLoadingRef.current ||
+      now - pageNavigationLastStartedAtRef.current <
+        PAGE_NAVIGATION_CLICK_COOLDOWN_MS
+    ) {
+      return;
+    }
+
+    pageNavigationLoadingRef.current = true;
+    pageNavigationLastStartedAtRef.current = now;
+    setIsPageNavigationLoading(true);
+    const requestId = ++pageNavigationRequestRef.current;
+    setError("");
     try {
-      const page = await requestJson(`/api/pages/${pageNumber}`);
-      navigate(page.startSura, page.startAya);
+      const pageData = await loadPageData(pageNumber, edition);
+      if (requestId !== pageNavigationRequestRef.current) {
+        return;
+      }
+      pageNavigationTargetRef.current = pageData.page.number;
+      activateReaderPage(pageData, edition);
+      setReader(pageData);
+      setLoading(false);
+      navigate(pageData.page.start.sura, pageData.page.start.aya);
     } catch (requestError) {
+      if (requestId !== pageNavigationRequestRef.current) {
+        return;
+      }
+      pageNavigationLoadingRef.current = false;
+      pageNavigationLastStartedAtRef.current = 0;
+      pageNavigationTargetRef.current = null;
+      setIsPageNavigationLoading(false);
       setError(requestError.message);
+      setLoading(false);
     }
   };
 
@@ -1935,25 +2105,18 @@ function App() {
                     {currentSura
                       ? `سورة ${currentSura.arabicName}`
                       : `سورة ${arabicNumber(location.sura)}`}
-                  </strong>
-                  <small
-                    title={
-                      currentSura
-                        ? `${currentSura.name}; ${currentSura.revelationType}; revelation order ${currentSura.revelationOrder}; ${currentSura.rukuCount} rukus`
-                        : undefined
-                    }
-                  >
-                    {currentSura?.meaning || currentSura?.name}
                     {currentSura?.revelationType &&
-                      ` · ${currentSura.revelationType}`}
-                  </small>
+                      ` · ${currentSura.revelationType == "Meccan" ? "مكية" : "مدنية"}`}
+                  </strong>
                 </div>
                 <div className="quran-page-navigation" dir="ltr">
                   <button
                     type="button"
-                    onClick={() => changePage(-1)}
-                    disabled={reader.page.number === 1}
-                    aria-label="Previous page"
+                    onClick={() => changePage(1)}
+                    disabled={
+                      isPageNavigationLoading || reader.page.number === 604
+                    }
+                    aria-label="Next page"
                   >
                     ◄
                   </button>
@@ -1961,19 +2124,37 @@ function App() {
                     <span className="visually-hidden">Page number</span>
                     <input
                       type="text"
-                      min="1"
-                      max="604"
-                      value={pageInput}
+                      inputMode="numeric"
+                      value={
+                        isPageInputFocused
+                          ? pageInput
+                          : arabicNumber(normalizeArabicDigits(pageInput))
+                      }
+                      disabled={isPageNavigationLoading}
+                      onFocus={() => setIsPageInputFocused(true)}
                       onChange={(event) => setPageInput(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          event.currentTarget.blur();
+                        }
+                      }}
                       onBlur={() => {
-                        const pageNumber = Number(pageInput);
+                        setIsPageInputFocused(false);
+                        const normalizedPageInput =
+                          normalizeArabicDigits(pageInput);
+                        const pageNumber = Number(normalizedPageInput);
                         if (
-                          pageInput &&
+                          normalizedPageInput &&
+                          Number.isInteger(pageNumber) &&
                           pageNumber >= 1 &&
                           pageNumber <= 604 &&
                           pageNumber !== reader.page.number
                         ) {
+                          setPageInput(String(pageNumber));
                           goToPage(pageNumber);
+                        } else {
+                          setPageInput(String(reader.page.number));
                         }
                       }}
                       aria-label="Page number"
@@ -1981,21 +2162,27 @@ function App() {
                   </label>
                   <button
                     type="button"
-                    onClick={() => changePage(1)}
-                    disabled={reader.page.number === 604}
-                    aria-label="Next page"
+                    onClick={() => changePage(-1)}
+                    disabled={
+                      isPageNavigationLoading || reader.page.number === 1
+                    }
+                    aria-label="Previous page"
                   >
                     ►
                   </button>
                 </div>
-                <div className="quran-edition-name" dir="rtl">
-                  <strong>مصحف المدينة</strong>
-                  <small>
-                    {currentSura?.ayaCount || "—"} ayas · Juz{" "}
-                    {reader.current.juz}
-                  </small>
+                <div className="quran-juz-name" dir="rtl">
+                  <strong>جزء {arabicNumberName(reader.current.juz)}</strong>
                 </div>
               </div>
+              <div
+                className={`page-navigation-progress${
+                  isPageNavigationLoading ? " is-loading" : ""
+                }`}
+                role="progressbar"
+                aria-label="Loading page"
+                aria-hidden={!isPageNavigationLoading}
+              />
 
               <div className="quran-frame quran-frame-top" aria-hidden="true" />
               <div className="quran-frame quran-frame-middle">
@@ -2022,18 +2209,22 @@ function App() {
               <div className="quran-page-footer" dir="ltr">
                 <button
                   type="button"
-                  onClick={() => changePage(-1)}
-                  disabled={reader.page.number === 1}
-                  aria-label="Previous page"
+                  onClick={() => changePage(1)}
+                  disabled={
+                    isPageNavigationLoading || reader.page.number === 604
+                  }
+                  aria-label="Next page"
                 >
                   ◄
                 </button>
                 <span>{arabicNumber(reader.page.number)}</span>
                 <button
                   type="button"
-                  onClick={() => changePage(1)}
-                  disabled={reader.page.number === 604}
-                  aria-label="Next page"
+                  onClick={() => changePage(-1)}
+                  disabled={
+                    isPageNavigationLoading || reader.page.number === 1
+                  }
+                  aria-label="Previous page"
                 >
                   ►
                 </button>
