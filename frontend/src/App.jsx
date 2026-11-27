@@ -1561,6 +1561,81 @@ function SearchableSuraSelect({ suras, selectedSura, onChange }) {
   );
 }
 
+function QuranPageMarginMarkers({ markers, pageNumber }) {
+  const railRef = useRef(null);
+  const [positions, setPositions] = useState([]);
+
+  useLayoutEffect(() => {
+    let active = true;
+    const rail = railRef.current;
+    const pageContent = rail?.parentElement;
+    const frame = pageContent?.querySelector(".quran-frame-middle");
+    if (!pageContent || !frame) {
+      return;
+    }
+
+    const updatePositions = () => {
+      if (!active) {
+        return;
+      }
+
+      const pageContentTop = pageContent.getBoundingClientRect().top;
+      const nextPositions = markers.flatMap((marker) => {
+        const verse = frame.querySelector(
+          `#verse-${marker.sura}-${marker.aya}`,
+        );
+        const verseRect = verse?.getClientRects()[0];
+        return verseRect
+          ? [
+              {
+                marker,
+                top: verseRect.top - pageContentTop + verseRect.height / 2,
+              },
+            ]
+          : [];
+      });
+      setPositions(nextPositions);
+    };
+
+    updatePositions();
+    const observer = new ResizeObserver(updatePositions);
+    observer.observe(pageContent);
+    observer.observe(frame);
+    window.addEventListener("resize", updatePositions);
+    document.fonts?.ready.then(updatePositions);
+
+    return () => {
+      active = false;
+      observer.disconnect();
+      window.removeEventListener("resize", updatePositions);
+    };
+  }, [markers, pageNumber]);
+
+  return (
+    <div
+      className="quran-page-margin-rail"
+      ref={railRef}
+      aria-hidden={!markers.length}
+    >
+      {positions.map(({ marker, top }) => (
+        <div
+          className="quran-page-margin-marker"
+          key={marker.key}
+          style={{ top: `${top}px` }}
+          role="img"
+          aria-label={marker.lines.join(", ")}
+        >
+          <span className="quran-page-margin-marker-text" dir="rtl" lang="ar">
+            {marker.lines.map((line) => (
+              <span key={line}>{line}</span>
+            ))}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function App() {
   const [location, setLocation] = useState(readHash);
   const [reader, setReader] = useState(null);
@@ -1656,6 +1731,46 @@ function App() {
     () => suras.find((item) => item.number === location.sura),
     [suras, location.sura],
   );
+  const pageMarginMarkers = useMemo(() => {
+    const markers = [];
+    for (const verse of reader?.verses || []) {
+      const juz = juzStarts.find(
+        (start) =>
+          start.startSura === verse.sura && start.startAya === verse.aya,
+      );
+      const hezb = hezbStarts.find(
+        (start) =>
+          start.startSura === verse.sura && start.startAya === verse.aya,
+      );
+      if (
+        (!juz && !hezb) ||
+        (juz && juz.number === 1 && hezb && hezb.number === 1)
+      ) {
+        continue;
+      }
+
+      const lines = [];
+      if (juz) {
+        lines.push(`جزء\n${arabicNumber(juz.number)}`);
+      }
+      if (hezb) {
+        const quarterLabel = [
+          "حزب",
+          "ربع\nالحزب",
+          "نصف\nالحزب",
+          "ثلاثة\nأرباع\nالحزب",
+        ][hezb.quarter];
+        lines.push(`${quarterLabel}\n${arabicNumber(hezb.hizb)}`);
+      }
+      markers.push({
+        key: `${verse.sura}-${verse.aya}`,
+        sura: verse.sura,
+        aya: verse.aya,
+        lines,
+      });
+    }
+    return markers;
+  }, [reader?.verses, juzStarts, hezbStarts]);
   const currentJuz = useMemo(() => {
     let juz = "";
     for (const start of juzStarts) {
@@ -2200,17 +2315,136 @@ function App() {
           {!loading && reader && (
             <div className="quran-page">
               <div className="quran-page-header">
-                <div className="quran-sura-name" dir="rtl">
-                  <strong>
-                    {currentSura
-                      ? `سورة ${currentSura.arabicName}`
-                      : `سورة ${arabicNumber(location.sura)}`}
-                    {currentSura?.revelationType &&
-                      ` (${currentSura.revelationType == "Meccan" ? "مكية" : "مدنية"}`}
-                    )
-                  </strong>
+                <div className="quran-page-header-margin" aria-hidden="true" />
+                <div className="quran-page-header-content">
+                  <div className="quran-sura-name" dir="rtl">
+                    <strong>
+                      {currentSura
+                        ? `سورة ${currentSura.arabicName}`
+                        : `سورة ${arabicNumber(location.sura)}`}
+                      {currentSura?.revelationType &&
+                        ` (${currentSura.revelationType == "Meccan" ? "مكية" : "مدنية"}`}
+                      )
+                    </strong>
+                  </div>
+                  <div className="quran-page-navigation" dir="ltr">
+                    <button
+                      type="button"
+                      onClick={() => changePage(1)}
+                      disabled={
+                        isPageNavigationLoading || reader.page.number === 604
+                      }
+                      aria-label="Next page"
+                    >
+                      ◄
+                    </button>
+                    <label>
+                      <span className="visually-hidden">Page number</span>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={
+                          isPageInputFocused
+                            ? pageInput
+                            : arabicNumber(normalizeArabicDigits(pageInput))
+                        }
+                        disabled={isPageNavigationLoading}
+                        onFocus={() => setIsPageInputFocused(true)}
+                        onChange={(event) => setPageInput(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            event.currentTarget.blur();
+                          }
+                        }}
+                        onBlur={() => {
+                          setIsPageInputFocused(false);
+                          const normalizedPageInput =
+                            normalizeArabicDigits(pageInput);
+                          const pageNumber = Number(normalizedPageInput);
+                          if (
+                            normalizedPageInput &&
+                            Number.isInteger(pageNumber) &&
+                            pageNumber >= 1 &&
+                            pageNumber <= 604 &&
+                            pageNumber !== reader.page.number
+                          ) {
+                            setPageInput(String(pageNumber));
+                            goToPage(pageNumber);
+                          } else {
+                            setPageInput(String(reader.page.number));
+                          }
+                        }}
+                        aria-label="Page number"
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => changePage(-1)}
+                      disabled={
+                        isPageNavigationLoading || reader.page.number === 1
+                      }
+                      aria-label="Previous page"
+                    >
+                      ►
+                    </button>
+                  </div>
+                  <div className="quran-juz-name" dir="rtl">
+                    <strong>
+                      جزء {arabicNumberName(reader.current.juz)}
+                      &nbsp;({arabicNumber(reader.current.juz)})
+                    </strong>
+                  </div>
                 </div>
-                <div className="quran-page-navigation" dir="ltr">
+                <div className="quran-page-header-margin" aria-hidden="true" />
+              </div>
+              <div className="quran-page-content">
+                <QuranPageMarginMarkers
+                  markers={pageMarginMarkers}
+                  pageNumber={reader.page.number}
+                />
+                <div className="quran-page-frame-column">
+                  <div
+                    className={`page-navigation-progress${
+                      isPageNavigationLoading ? " is-loading" : ""
+                    }`}
+                    role="progressbar"
+                    aria-label="Loading page"
+                    aria-hidden={!isPageNavigationLoading}
+                  />
+                  <div
+                    className="quran-frame quran-frame-top"
+                    aria-hidden="true"
+                  />
+                  <div className="quran-frame quran-frame-middle">
+                    <QuranLines
+                      verses={reader.verses}
+                      suras={suras}
+                      showTranslation={showTranslation}
+                      showSigns={showSigns}
+                      juzStarts={juzStarts}
+                      fontScale={fontScale}
+                      pageNumber={reader.page.number}
+                      location={location}
+                      playingTranslation={
+                        audioTrack === "translation" && isPlaying
+                          ? location
+                          : null
+                      }
+                      navigate={navigate}
+                      navigateOnKeyDown={navigateOnKeyDown}
+                    />
+                  </div>
+                  <div
+                    className="quran-frame quran-frame-bottom"
+                    aria-hidden="true"
+                  />
+                </div>
+                <div className="quran-page-margin-rail" aria-hidden="true" />
+              </div>
+              <div className="quran-page-footer" dir="ltr">
+                <div aria-hidden="true" />
+                <div className="quran-page-footer-content">
                   <button
                     type="button"
                     onClick={() => changePage(1)}
@@ -2221,46 +2455,7 @@ function App() {
                   >
                     ◄
                   </button>
-                  <label>
-                    <span className="visually-hidden">Page number</span>
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      value={
-                        isPageInputFocused
-                          ? pageInput
-                          : arabicNumber(normalizeArabicDigits(pageInput))
-                      }
-                      disabled={isPageNavigationLoading}
-                      onFocus={() => setIsPageInputFocused(true)}
-                      onChange={(event) => setPageInput(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                          event.preventDefault();
-                          event.currentTarget.blur();
-                        }
-                      }}
-                      onBlur={() => {
-                        setIsPageInputFocused(false);
-                        const normalizedPageInput =
-                          normalizeArabicDigits(pageInput);
-                        const pageNumber = Number(normalizedPageInput);
-                        if (
-                          normalizedPageInput &&
-                          Number.isInteger(pageNumber) &&
-                          pageNumber >= 1 &&
-                          pageNumber <= 604 &&
-                          pageNumber !== reader.page.number
-                        ) {
-                          setPageInput(String(pageNumber));
-                          goToPage(pageNumber);
-                        } else {
-                          setPageInput(String(reader.page.number));
-                        }
-                      }}
-                      aria-label="Page number"
-                    />
-                  </label>
+                  <span>{arabicNumber(reader.page.number)}</span>
                   <button
                     type="button"
                     onClick={() => changePage(-1)}
@@ -2272,64 +2467,7 @@ function App() {
                     ►
                   </button>
                 </div>
-                <div className="quran-juz-name" dir="rtl">
-                  <strong>
-                    جزء {arabicNumberName(reader.current.juz)}
-                    &nbsp;({arabicNumber(reader.current.juz)})
-                  </strong>
-                </div>
-              </div>
-              <div
-                className={`page-navigation-progress${
-                  isPageNavigationLoading ? " is-loading" : ""
-                }`}
-                role="progressbar"
-                aria-label="Loading page"
-                aria-hidden={!isPageNavigationLoading}
-              />
-
-              <div className="quran-frame quran-frame-top" aria-hidden="true" />
-              <div className="quran-frame quran-frame-middle">
-                <QuranLines
-                  verses={reader.verses}
-                  suras={suras}
-                  showTranslation={showTranslation}
-                  showSigns={showSigns}
-                  juzStarts={juzStarts}
-                  fontScale={fontScale}
-                  pageNumber={reader.page.number}
-                  location={location}
-                  playingTranslation={
-                    audioTrack === "translation" && isPlaying ? location : null
-                  }
-                  navigate={navigate}
-                  navigateOnKeyDown={navigateOnKeyDown}
-                />
-              </div>
-              <div
-                className="quran-frame quran-frame-bottom"
-                aria-hidden="true"
-              />
-              <div className="quran-page-footer" dir="ltr">
-                <button
-                  type="button"
-                  onClick={() => changePage(1)}
-                  disabled={
-                    isPageNavigationLoading || reader.page.number === 604
-                  }
-                  aria-label="Next page"
-                >
-                  ◄
-                </button>
-                <span>{arabicNumber(reader.page.number)}</span>
-                <button
-                  type="button"
-                  onClick={() => changePage(-1)}
-                  disabled={isPageNavigationLoading || reader.page.number === 1}
-                  aria-label="Previous page"
-                >
-                  ►
-                </button>
+                <div aria-hidden="true" />
               </div>
             </div>
           )}
