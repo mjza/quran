@@ -1450,6 +1450,117 @@ async function requestJson(url, signal) {
   return body;
 }
 
+function SearchableSuraSelect({ suras, selectedSura, onChange }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [activeIndex, setActiveIndex] = useState(0);
+  const filteredSuras = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+    return suras.filter((sura) =>
+      sura.name.toLowerCase().includes(normalizedQuery),
+    );
+  }, [query, suras]);
+
+  useEffect(() => {
+    setIsOpen(false);
+    setQuery("");
+    setActiveIndex(0);
+  }, [selectedSura?.number]);
+
+  const selectSura = (sura) => {
+    onChange(sura.number);
+    setIsOpen(false);
+    setQuery("");
+  };
+
+  const handleKeyDown = (event) => {
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      if (!isOpen) {
+        setIsOpen(true);
+        setQuery("");
+        setActiveIndex(0);
+      } else {
+        setActiveIndex((index) =>
+          Math.min(index + 1, filteredSuras.length - 1),
+        );
+      }
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setIsOpen(true);
+      setActiveIndex((index) => Math.max(index - 1, 0));
+    } else if (event.key === "Enter" && isOpen) {
+      event.preventDefault();
+      if (filteredSuras[activeIndex]) {
+        selectSura(filteredSuras[activeIndex]);
+      }
+    } else if (event.key === "Escape" && isOpen) {
+      setIsOpen(false);
+      setQuery("");
+    }
+  };
+
+  return (
+    <div className="sura-picker">
+      <input
+        id="sura-select"
+        className="sura-search-input"
+        type="text"
+        role="combobox"
+        aria-autocomplete="list"
+        aria-expanded={isOpen}
+        aria-controls="sura-options"
+        aria-activedescendant={
+          isOpen && filteredSuras[activeIndex]
+            ? `sura-option-${filteredSuras[activeIndex].number}`
+            : undefined
+        }
+        placeholder={selectedSura?.name || "Search suras"}
+        value={isOpen ? query : selectedSura?.name || ""}
+        onFocus={() => {
+          setIsOpen(true);
+          setQuery("");
+          setActiveIndex(0);
+        }}
+        onBlur={() => {
+          setIsOpen(false);
+          setQuery("");
+        }}
+        onChange={(event) => {
+          setQuery(event.target.value);
+          setActiveIndex(0);
+          setIsOpen(true);
+        }}
+        onKeyDown={handleKeyDown}
+      />
+      {isOpen && (
+        <div className="sura-options" id="sura-options" role="listbox">
+          {filteredSuras.length ? (
+            filteredSuras.map((sura, index) => (
+              <div
+                id={`sura-option-${sura.number}`}
+                className={`sura-option${index === activeIndex ? " active" : ""}`}
+                key={sura.number}
+                role="option"
+                aria-selected={sura.number === selectedSura?.number}
+                onMouseDown={(event) => event.preventDefault()}
+                onMouseEnter={() => setActiveIndex(index)}
+                onClick={() => selectSura(sura)}
+              >
+                {String(sura.number).padStart(3, "0")} · {sura.name}
+              </div>
+            ))
+          ) : (
+            <div className="sura-no-results" role="status">
+              No suras found
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function App() {
   const [location, setLocation] = useState(readHash);
   const [reader, setReader] = useState(null);
@@ -1841,11 +1952,6 @@ function App() {
     }
   };
 
-  const changeSura = (event) => {
-    const sura = Number(event.target.value);
-    navigate(sura, 1);
-  };
-
   const changeJuz = (event) => {
     const juz = juzStarts.find(
       (item) => item.number === Number(event.target.value),
@@ -1949,17 +2055,11 @@ function App() {
             <label className="field-label" htmlFor="sura-select">
               Sura
             </label>
-            <select
-              id="sura-select"
-              value={location.sura}
-              onChange={changeSura}
-            >
-              {suras.map((sura) => (
-                <option key={sura.number} value={sura.number}>
-                  {String(sura.number).padStart(3, "0")} · {sura.name}
-                </option>
-              ))}
-            </select>
+            <SearchableSuraSelect
+              suras={suras}
+              selectedSura={currentSura}
+              onChange={(sura) => navigate(sura, 1)}
+            />
           </div>
 
           <form

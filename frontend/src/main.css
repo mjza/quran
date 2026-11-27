@@ -148,7 +148,8 @@ button {
   font-weight: 600;
 }
 .control-panel select,
-.location-fields input {
+.location-fields input,
+.sura-search-input {
   width: 100%;
   min-height: 39px;
   padding: 0 10px;
@@ -160,9 +161,44 @@ button {
   font-size: 12px;
 }
 .control-panel select:focus,
-.location-fields input:focus {
+.location-fields input:focus,
+.sura-search-input:focus {
   border-color: #84ad94;
   box-shadow: 0 0 0 3px #245c4915;
+}
+.sura-picker {
+  position: relative;
+}
+.sura-options {
+  position: absolute;
+  z-index: 10;
+  top: calc(100% + 4px);
+  right: 0;
+  left: 0;
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 4px;
+  background: #fff;
+  border: 1px solid #e4e6df;
+  border-radius: 7px;
+  box-shadow: 0 8px 20px #253c2c18;
+}
+.sura-option,
+.sura-no-results {
+  padding: 9px 8px;
+  border-radius: 4px;
+  color: #303832;
+  font-size: 12px;
+}
+.sura-option {
+  cursor: pointer;
+}
+.sura-option:hover,
+.sura-option.active {
+  background: var(--green-pale);
+}
+.sura-no-results {
+  color: var(--muted);
 }
 .location-form {
   margin-top: 20px;
