@@ -1,7 +1,6 @@
 :root {
   font-family: "Segoe UI", Tahoma, sans-serif;
   color: #242a25;
-  background: #f5f4ef;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   font-smooth: always;
@@ -13,6 +12,12 @@
   --line: #e8e7e0;
   --muted: #858b83;
   --paper: #fffefa;
+  background-color: #ece9db;
+  background-image: url(/images/pattern_tiny.png);
+  background-repeat: repeat;
+  background-size: 200px 200px;
+  background-attachment: inherit;
+  background-position: 0 0;
 }
 
 * {
@@ -46,6 +51,11 @@ button {
   justify-content: space-between;
   background: var(--paper);
   border-bottom: 1px solid var(--line);
+  background: url(/images/header.png) !important;
+  background-size: 430px !important;
+  padding: 80px 200px 20px;
+  height: 219px;
+  position: relative;
 }
 
 .brand {
@@ -62,7 +72,8 @@ button {
   display: grid;
   place-items: center;
   color: var(--green);
-  background: var(--green-pale);
+  background: var(--green-pale) url("/images/icons/recitation.png") center /
+    40px no-repeat;
   border-radius: 13px;
   font-size: 27px;
 }

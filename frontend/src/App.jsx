@@ -2147,25 +2147,22 @@ function App() {
         <a
           className="brand"
           href="#1:1"
-          aria-label="Quran Reader home"
+          aria-label="Almubin home"
           onClick={(event) => {
             event.preventDefault();
             navigate(1, 1);
           }}
         >
-          <span className="brand-mark" aria-hidden="true">
-            ۞
-          </span>
+          <span className="brand-mark" aria-hidden="true"></span>
           <span>
-            <strong>Quran Reader</strong>
-            <small>Read · Listen · Reflect</small>
+            <strong>Almubin</strong>
+            <small>Recite & Listen to Quran ۞</small>
           </span>
         </a>
         <div className="topbar-meta">
           <span className="local-indicator">
-            <i /> Local library
+            <i /> Menu
           </span>
-          <span className="edition-label">604-page Madinah edition</span>
         </div>
       </header>
 
