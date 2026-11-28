@@ -338,7 +338,21 @@ button {
   height: 149px;
   place-items: center;
   transform: translate(-50%, -50%);
-  background: url("/images/frame2.png") center / contain no-repeat;
+  background: url("/images/frame_hezb.png") center / contain no-repeat;
+}
+.quran-page-margin-marker-sajdah,
+.quran-page-margin-marker-saktah {
+  /* 2. Stick background image to the bottom */
+  background-image: url("/images/frame_sujdah.png");
+  background-position: bottom center; /* Anchors image to bottom edge */
+  background-repeat: no-repeat; /* Prevents image from tiling */
+  background-size: contain; /* Optional: ensures the whole frame fits cleanly */
+
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  /* Container must have a height for bottom alignment to be visible */
+  height: 200px;
 }
 .quran-page-margin-marker-text {
   display: flex;
@@ -450,7 +464,7 @@ button {
   outline-offset: 2px;
 }
 .quran-frame {
-  background: #fffef7 url("/images/frame.png") repeat-y 0 0;
+  background: #fffef7 url("/images/frame_quran.png") repeat-y 0 0;
   background-size: 200% 48px;
 }
 .quran-frame-top {
@@ -483,7 +497,7 @@ button {
   align-items: center;
   justify-content: center;
   gap: 9px;
-  background: url("/images/sura-frame.png") no-repeat center;
+  background: url("/images/frame_sura.png") no-repeat center;
   font-family: hafs, "Times New Roman", serif;
   font-size: 20px;
   line-height: 1;

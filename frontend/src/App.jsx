@@ -24,6 +24,7 @@ const HEZB_PORTION_LABELS = [
   "Hezb {{hezb}} \u00BE",
 ];
 const PAGE_NAVIGATION_CLICK_COOLDOWN_MS = 500;
+const SAKTAH_VERSES = new Set(["18:1", "36:52", "75:27", "83:14"]);
 
 function hasBasmalaAya(sura) {
   return sura !== 1 && sura !== 9;
@@ -313,6 +314,7 @@ function measureTokenLines(node, tokens) {
 }
 
 const FIXED_ARABIC_LINE_COUNT = 15;
+const MAX_ADDITIONAL_ARABIC_LINES = 3;
 const OPENING_PAGE_ARABIC_LINE_COUNT = 5;
 const TATWEEL_JOINING_LETTERS = new Set(
   "\u0628\u062a\u062b\u062c\u062d\u062e\u0633\u0634\u0635\u0636\u0637\u0638\u0639\u063a\u0641\u0642\u0643\u0644\u0645\u0646\u0647\u064a\u0626",
@@ -797,7 +799,7 @@ function QuranLines({
         return;
       }
       const fixedDesktopPage = isDesktopViewport && pageNumber >= 1;
-      const fixedArabicLineCount =
+      const baseArabicLineCount =
         pageNumber > 2
           ? FIXED_ARABIC_LINE_COUNT
           : OPENING_PAGE_ARABIC_LINE_COUNT;
@@ -810,15 +812,25 @@ function QuranLines({
             streams.translationTokens,
           )
         : null;
-      const fixedArabicLineMap = arabicMeasurements
-        ? buildFixedArabicLineMap(
+      let fixedArabicLineMap = null;
+      if (arabicMeasurements) {
+        for (
+          let additionalLines = 0;
+          additionalLines <= MAX_ADDITIONAL_ARABIC_LINES;
+          additionalLines += 1
+        ) {
+          fixedArabicLineMap = buildFixedArabicLineMap(
             streams.arabicItems,
             arabicMeasurements.widths,
             arabicMeasurements.contentWidth,
-            fixedArabicLineCount,
+            baseArabicLineCount + additionalLines,
             pageNumber,
-          )
-        : null;
+          );
+          if (fixedArabicLineMap) {
+            break;
+          }
+        }
+      }
       const nextLineMaps = {
         arabic:
           fixedArabicLineMap ||
@@ -1561,7 +1573,7 @@ function SearchableSuraSelect({ suras, selectedSura, onChange }) {
   );
 }
 
-function QuranPageMarginMarkers({ markers, pageNumber }) {
+function QuranPageMarginMarkers({ markers, pageNumber, variant = "hezb" }) {
   const railRef = useRef(null);
   const [positions, setPositions] = useState([]);
 
@@ -1617,21 +1629,28 @@ function QuranPageMarginMarkers({ markers, pageNumber }) {
       ref={railRef}
       aria-hidden={!markers.length}
     >
-      {positions.map(({ marker, top }) => (
-        <div
-          className="quran-page-margin-marker"
-          key={marker.key}
-          style={{ top: `${top}px` }}
-          role="img"
-          aria-label={marker.lines.join(", ")}
-        >
-          <span className="quran-page-margin-marker-text" dir="rtl" lang="ar">
-            {marker.lines.map((line) => (
-              <span key={line}>{line}</span>
-            ))}
-          </span>
-        </div>
-      ))}
+      {positions.map(({ marker, top }) => {
+        const markerVariant = marker.variant || variant;
+        return (
+          <div
+            className={`quran-page-margin-marker${
+              markerVariant === "hezb"
+                ? ""
+                : ` quran-page-margin-marker-${markerVariant}`
+            }`}
+            key={marker.key}
+            style={{ top: `${top}px` }}
+            role="img"
+            aria-label={marker.lines.join(", ")}
+          >
+            <span className="quran-page-margin-marker-text" dir="rtl" lang="ar">
+              {marker.lines.map((line) => (
+                <span key={line}>{line}</span>
+              ))}
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -1771,6 +1790,30 @@ function App() {
     }
     return markers;
   }, [reader?.verses, juzStarts, hezbStarts]);
+  const leftPageMarkers = useMemo(() => {
+    const markers = [];
+    for (const verse of reader?.verses || []) {
+      const locationKey = `${verse.sura}:${verse.aya}`;
+      const marker = { sura: verse.sura, aya: verse.aya };
+      if (verse.text.includes("\u06E9")) {
+        markers.push({
+          ...marker,
+          key: `${locationKey}-sajdah`,
+          variant: "sajdah",
+          lines: ["سجدة", "\n"],
+        });
+      }
+      if (SAKTAH_VERSES.has(locationKey)) {
+        markers.push({
+          ...marker,
+          key: `${locationKey}-saktah`,
+          variant: "saktah",
+          lines: ["سکة", "لطیفه"],
+        });
+      }
+    }
+    return markers;
+  }, [reader?.verses]);
   const currentJuz = useMemo(() => {
     let juz = "";
     for (const start of juzStarts) {
@@ -2400,7 +2443,7 @@ function App() {
               </div>
               <div className="quran-page-content">
                 <QuranPageMarginMarkers
-                  markers={pageMarginMarkers}
+                  markers={leftPageMarkers}
                   pageNumber={reader.page.number}
                 />
                 <div className="quran-page-frame-column">
@@ -2440,7 +2483,10 @@ function App() {
                     aria-hidden="true"
                   />
                 </div>
-                <div className="quran-page-margin-rail" aria-hidden="true" />
+                <QuranPageMarginMarkers
+                  markers={pageMarginMarkers}
+                  pageNumber={reader.page.number}
+                />
               </div>
               <div className="quran-page-footer" dir="ltr">
                 <div aria-hidden="true" />
