@@ -555,6 +555,9 @@ button {
 .internal-sign {
   color: rgba(0, 85, 0, 0.75);
 }
+.internal-sign .ayaNumber {
+  color: #171a16;
+}
 .hezb-sign {
   color: rgba(0, 85, 255, 0.8);
 }
